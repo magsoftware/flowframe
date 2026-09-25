@@ -152,7 +152,7 @@ detail: medium
 select:
   tags: [runtime]
   includeRelated: true
-  maxDepth: 3
+  relatedDepth: 1
 
 display:
   boundaries: [environment, network]

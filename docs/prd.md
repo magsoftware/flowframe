@@ -366,27 +366,27 @@ scenarios:
 
 ---
 
-## 9. Semantic vocabulary
+## 9. Controlled vocabulary
 
 ### 9.1. Element kinds
 
-The MVP vocabulary is intentionally small:
+The MVP vocabulary is intentionally small. The definitions are normative:
 
-```text
-actor
-external-system
-web-application
-service
-worker
-gateway
-database
-cache
-queue
-storage
-identity-provider
-secret-store
-security-control
-```
+| Kind | Meaning |
+|---|---|
+| `actor` | A human or organizational participant interacting with the system. |
+| `external-system` | A software system outside the modeled system's ownership boundary and shown as a whole. |
+| `web-application` | A user-facing software element whose primary interface is a web UI. A separately deployed backend is modeled as a `service`. |
+| `service` | An independently addressable software capability or API. |
+| `worker` | A non-interactive compute process triggered by a job, schedule or event. |
+| `gateway` | An ingress, proxy or routing element mediating traffic to other elements. |
+| `database` | A persistent structured data store with query or transaction semantics. |
+| `cache` | A temporary or derived data store primarily used to reduce access latency. |
+| `queue` | A messaging element that buffers or distributes asynchronous messages. |
+| `storage` | Persistent object, blob or file storage without database semantics. |
+| `identity-provider` | A component that authenticates identities or issues identity assertions or tokens. |
+| `secret-store` | A component that protects and provides secrets, keys or certificates. |
+| `security-control` | A component that enforces or observes a security policy and has no more specific semantic kind. |
 
 Vendor products MUST use a semantic kind plus an optional `technology` value:
 
@@ -401,14 +401,16 @@ Adding a vendor product MUST NOT require adding a new semantic kind.
 
 ### 9.2. Boundary kinds
 
-```text
-system
-environment
-network
-trust-zone
-cluster
-namespace
-```
+| Kind | Meaning |
+|---|---|
+| `subsystem` | A logical system contained within the root system or another subsystem. |
+| `environment` | A lifecycle or deployment environment such as development, staging or production. |
+| `network` | A network segment, virtual network or subnet. |
+| `trust-zone` | A region governed by a shared trust level or security policy. |
+| `cluster` | A compute or orchestration cluster. |
+| `namespace` | A logical isolation scope within a cluster or platform. |
+
+The top-level `system` object represents the modeled system and provides its outer boundary when a view displays it. Nested logical systems use the unambiguous `subsystem` boundary kind.
 
 Boundaries define containment or a visible grouping. They are not runtime components and MUST NOT use component styling.
 
@@ -418,40 +420,55 @@ Relation semantics are expressed using orthogonal properties rather than one ove
 
 `semantic` identifies meaning:
 
-```text
-request
-event
-data-access
-data-flow
-dependency
-replication
-control
-authentication
-authorization
-```
+| Value | Meaning |
+|---|---|
+| `request` | A directed invocation or command sent to another element for processing. |
+| `event` | A notification that a fact or state change occurred, normally delivered asynchronously. |
+| `data-access` | A read, write or query performed against a data store. |
+| `data-flow` | Transfer of a data set, stream or artifact between elements. |
+| `dependency` | A structural or runtime dependency that does not necessarily represent network traffic. |
+| `replication` | Copying or synchronizing state between stores or instances. |
+| `control` | A management, scheduling or orchestration signal. |
+| `authentication` | Proof or verification of identity, including token or assertion exchange. |
+| `authorization` | A permission or policy decision about an attempted action. |
 
 `interaction` identifies timing:
 
-```text
-synchronous
-asynchronous
-not-applicable
-```
+| Value | Meaning |
+|---|---|
+| `synchronous` | The source waits for completion or an immediate response before continuing the modeled interaction. |
+| `asynchronous` | The source does not wait for the target to complete processing. |
+| `not-applicable` | Timing semantics do not apply, for example to a purely structural dependency. |
 
 Optional properties include:
 
 ```text
 protocol
 label
-direction
+directionality
 technology
 encrypted
 tags
 ```
 
+`source` and `target` are required for every relation, including an `undirected` relation. They identify the two endpoints and provide stable serialization and traceability. For `directed` and `bidirectional` relations, their order defines the normal forward order; reverse flow is represented by swapping them, not by another enum value. For `undirected`, their order has no flow meaning. `directionality` MAY be `directed`, `bidirectional` or `undirected`, defaults to `directed` and controls the directional interpretation and arrowhead rendering without changing endpoint requirements.
+
+`encrypted` is a boolean describing transport encryption for that relation. It does not assert broader end-to-end or at-rest encryption.
+
 `internet` is not a relation type. It SHOULD be modeled as a network boundary, an external network element or view metadata describing the route.
 
 `trust` is not a generic connection type. Trust boundaries and authentication/authorization relations MUST be modeled explicitly.
+
+### 9.4. Scenario step kinds
+
+The v0.1 scenario vocabulary is:
+
+| Kind | Required fields | Meaning |
+|---|---|---|
+| `message` | `id`, `from`, `to`, `label` | An ordered interaction between two participants. A self-message uses the same ID in `from` and `to`; it is not a separate kind. |
+| `note` | `id`, `participant`, `label` | An explanatory note attached to one participant at that point in the scenario. `participant` MUST reference an element ID; boundary IDs are invalid. |
+
+Activation spans and grouped fragments such as `alt`, `loop` and `parallel` are post-MVP extensions and MUST NOT appear in a v0.1 source model.
 
 ---
 
@@ -480,7 +497,31 @@ Every view declares:
 | Flow | integration-flow | data-flow, event-flow, dependency-flow |
 | Sequence | sequence | — |
 
-### 10.3. Architecture view example
+### 10.3. Audience and detail
+
+`audience` is a required enum in v0.1:
+
+| Value | Intended reader |
+|---|---|
+| `architect` | System and solution architects evaluating structure and trade-offs. |
+| `developer` | Engineers implementing or debugging software behavior. |
+| `platform` | Engineers operating runtime platforms, networks and deployment infrastructure. |
+| `security` | Engineers reviewing trust boundaries, identity and security controls. |
+| `operations` | Engineers operating and supporting the deployed system. |
+| `business` | Non-technical stakeholders interested in capabilities and external interactions. |
+| `mixed` | A cross-functional audience for which no single specialist profile is appropriate. |
+
+`detail` is a required enum and supplies family-specific display defaults only:
+
+| Value | Default intent |
+|---|---|
+| `low` | Names, major boundaries and primary relations; protocols and technology details hidden. |
+| `medium` | Boundaries and relation labels visible; selected technology and protocol details shown when useful. |
+| `high` | All supported metadata relevant to the selected family is shown unless explicitly disabled. |
+
+The detail preset MUST NOT add or remove selected elements. Explicit `display` values override preset defaults. Audience is metadata used by templates, review rules and AI guidance; it MUST NOT silently change selection in v0.1. Each family template MUST document its exact defaults for every detail level.
+
+### 10.4. Architecture view example
 
 ```yaml
 schemaVersion: flowframe/v1
@@ -493,7 +534,7 @@ detail: medium
 select:
   tags: [runtime]
   includeRelated: true
-  maxDepth: 3
+  relatedDepth: 1
 
 exclude:
   kinds: []
@@ -510,7 +551,7 @@ layout:
   direction: right
 ```
 
-### 10.4. Sequence view example
+### 10.5. Sequence view example
 
 ```yaml
 schemaVersion: flowframe/v1
@@ -530,27 +571,29 @@ layout:
   profile: sequence
 ```
 
-### 10.5. Selection semantics
+A sequence view references exactly one `scenarioId` in v0.1. Combining scenarios requires separate views; multi-scenario composition is deferred until ordering and presentation semantics are defined.
 
-The schemas and implementation MUST define:
+### 10.6. Selection semantics
+
+The selection contract covers:
 
 - whether criteria are combined using AND or OR,
 - how `includeRelated` traverses relations,
 - how many traversal hops are allowed,
 - what happens to relations with an excluded endpoint,
 - how containment ancestors are added,
-- how empty boundaries are handled,
-- how aggregation preserves traceability to source IDs.
+- how empty boundaries are handled.
 
-For v0.1:
+For v0.1, selection is deterministic and runs in this order:
 
-- values within one selection list use OR,
-- different selection fields use AND,
-- `includeRelated` performs one hop unless `relatedDepth` is provided,
-- relations with a missing endpoint are omitted,
-- required containment ancestors are automatically included,
-- empty boundaries are omitted,
-- aggregation is not supported.
+1. Build the seed set from `select.ids`, `select.tags` and `select.kinds`. Values within one field use OR; different populated fields use AND. If `select` is omitted, all elements form the seed set.
+2. If `includeRelated` is true, traverse relations breadth-first from the seed set and add the opposite endpoints through `relatedDepth` hops. `relatedDepth` defaults to `1`, MUST be a positive integer and is invalid when `includeRelated` is false.
+3. Apply `exclude.ids`, `exclude.tags` and `exclude.kinds` to elements. Matching any populated exclusion field removes the element; exclusion takes precedence over selection.
+4. Include model relations only when both endpoints remain selected. Relations with an excluded or otherwise missing endpoint are omitted.
+5. Add the complete containment-ancestor chain needed for every selected element. `display.boundaries` determines which boundary kinds are visible; descendants of a hidden boundary are promoted to the nearest visible ancestor or the view root.
+6. Omit empty visible boundaries.
+
+Containment-depth filtering and aggregation are not supported in v0.1. They require explicit flattening and traceability semantics before being added.
 
 ---
 
@@ -584,10 +627,10 @@ Contains:
 
 - ordered participants,
 - ordered messages,
-- self-messages,
-- notes,
-- optional activation spans,
-- groups such as `alt`, `loop` and `parallel` when introduced after the MVP.
+- self-messages represented as messages whose source and target participant are identical,
+- notes.
+
+Activation spans and groups such as `alt`, `loop` and `parallel` may be added after the MVP.
 
 All IR nodes and edges MUST retain their source model IDs for diagnostics and traceability.
 
@@ -781,10 +824,11 @@ Validation is part of the first vertical slice, not a late implementation phase.
 
 - unique and valid IDs,
 - valid source, target, parent and scenario references,
+- note participants reference elements rather than boundaries,
 - no containment cycles,
 - allowed element and boundary kinds,
 - allowed relation-property combinations,
-- ordered and uniquely identified scenario steps,
+- allowed scenario step kinds, their required fields and uniquely identified ordered steps,
 - view family/subtype compatibility,
 - valid selection fields and traversal limits,
 - compatibility of layout options with the selected engine,
@@ -817,16 +861,32 @@ Warnings MUST NOT change generated semantics automatically.
 
 ### 16.1. Reproducibility
 
-The build MUST record:
+`manifest.json` MUST conform to a versioned schema. Its minimum v1 contract is:
 
-- FlowFrame version,
-- schema version,
-- D2 version,
-- selected layout engine and version where available,
-- renderer flags,
-- theme version,
-- hashes of the model and view,
-- generation timestamp only in the manifest, not in deterministic source output.
+```json
+{
+  "schemaVersion": "flowframe-manifest/v1",
+  "flowframeVersion": "0.1.0",
+  "source": {
+    "model": { "path": "system-model.yaml", "schemaVersion": "flowframe/v1", "sha256": "..." },
+    "view": { "path": "infrastructure-view.yaml", "schemaVersion": "flowframe/v1", "sha256": "..." }
+  },
+  "renderer": {
+    "d2Version": "...",
+    "layoutEngine": "elk",
+    "layoutEngineVersion": "...",
+    "flags": []
+  },
+  "theme": { "id": "flowframe-light", "version": "1" },
+  "outputs": {
+    "d2": { "path": "diagram.d2", "sha256": "..." },
+    "svg": { "path": "diagram.svg", "sha256": "..." }
+  },
+  "generatedAt": "RFC-3339 timestamp"
+}
+```
+
+Paths in the manifest MUST be relative to the build root. Hashes MUST use SHA-256. `layoutEngineVersion` MAY be `null` only when the engine does not expose a version. The generation timestamp appears only in the manifest, not in deterministic D2 source.
 
 The same inputs and pinned toolchain MUST generate byte-identical `diagram.d2`. SVG stability MUST be tested using normalized snapshots because renderer metadata may differ between versions.
 
@@ -1025,7 +1085,8 @@ flowframe/
 │
 ├── schema/
 │   ├── system-model.schema.json
-│   └── view.schema.json
+│   ├── view.schema.json
+│   └── manifest.schema.json
 │
 ├── lib/
 │   ├── theme.d2
@@ -1102,6 +1163,7 @@ Scope:
 
 - System Model v1 schema,
 - View Specification v1 schema,
+- manifest v1 schema,
 - YAML parser and safe loading,
 - semantic validator and diagnostics,
 - infrastructure projection,
@@ -1240,7 +1302,7 @@ Human visual review remains part of release approval until reliable automated la
 | Remote icons break offline builds | non-reproducible output | local approved assets, remote resources disabled |
 | D2 classes are overridden | inconsistent styling | generated D2 only, linting, no style fields in source schemas |
 | Automatic review changes semantics | architecture corruption | immutable System Model during layout improvement, visible diff |
-| Sequence needs outgrow static relations | incompatible model | explicit ordered scenarios and Sequence IR |
+| Sequence requirements outgrow static relations | incompatible model | explicit ordered scenarios and Sequence IR |
 | Large diagrams remain unreadable | poor usability | view filtering, warnings, future aggregation |
 
 ---
