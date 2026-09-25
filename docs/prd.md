@@ -66,6 +66,7 @@ FlowFrame addresses these problems with validated schemas, deterministic code ge
 FlowFrame v0.1 MUST support:
 
 - YAML input with JSON Schema validation,
+- an optional project-wide `flowframe.yaml` configuration with a built-in default when absent,
 - a reusable System Model,
 - a View Specification selecting and presenting part of that model,
 - three initial view types:
@@ -75,7 +76,7 @@ FlowFrame v0.1 MUST support:
 - deterministic generation of D2 source,
 - SVG rendering through a pinned D2 CLI,
 - ELK as the portable baseline layout engine,
-- a centralized light theme,
+- a centralized light theme and one project-wide custom Theme/Brand Pack,
 - a small, documented semantic vocabulary,
 - semantic validation in addition to schema validation,
 - local and CI execution without network access,
@@ -143,8 +144,10 @@ AI MAY describe:
 For v0.1, the source of truth is:
 
 ```text
-system-model.yaml + view.yaml
+[flowframe.yaml + selected Theme/Brand Pack] + system-model.yaml + view.yaml
 ```
+
+`flowframe.yaml` is optional. When it is absent, FlowFrame MUST use the versioned built-in default configuration and light theme. When present, it applies globally to every diagram built within that project root.
 
 The following files are generated artifacts:
 
@@ -157,6 +160,8 @@ manifest.json
 Generated D2 MUST contain a header stating that it must not be edited manually. Rebuilding a diagram MAY overwrite generated artifacts.
 
 AI MUST produce or update only structured source files. The deterministic compiler is solely responsible for D2 generation and visual styling.
+
+Project maintainers own `flowframe.yaml` and custom Theme/Brand Packs. AI MUST NOT create or modify raw theme-token values unless the user explicitly requests a project-wide branding change.
 
 Hand-authored D2 MAY be accepted in a future compatibility mode, but that mode will not receive the same semantic and styling guarantees.
 
@@ -221,7 +226,7 @@ Natural language / source documentation
           optional AI adapter
                  │
                  ▼
-          System Model + View
+   Project Configuration + System Model + View
                  │
         ┌────────┴────────┐
         │                 │
@@ -252,10 +257,12 @@ Natural language / source documentation
 ### 7.1. Required separation of responsibilities
 
 - **System Model** describes reusable facts about the system.
-- **View Specification** describes what to show and for whom.
+- **Project Configuration** selects one global Theme/Brand Pack and decoration policy for every diagram in the project.
+- **View Specification** describes what to show, for whom and the textual content of optional presentation elements.
 - **Projection** selects, aggregates and normalizes information for a diagram family.
 - **Family IR** captures information unique to architecture, flow or sequence diagrams.
 - **D2 generator** maps the normalized IR to framework-owned classes and templates.
+- **Decoration generator** adds title, subtitle, source footer and project logo using the global presentation policy.
 - **Renderer** validates and renders D2 without changing system semantics.
 - **Reviewer** reports problems; it MUST NOT silently alter the System Model.
 
@@ -489,6 +496,8 @@ Every view declares:
 - a portable layout profile,
 - optional engine-specific overrides in a clearly isolated section.
 
+A view MAY also declare presentation content such as a title, subtitle and source attribution. It MUST NOT select a theme, logo, font, color or decoration position.
+
 ### 10.2. Supported families and subtypes
 
 | Family | MVP subtype | Planned subtypes |
@@ -530,6 +539,11 @@ family: architecture
 subtype: infrastructure
 audience: architect
 detail: medium
+
+presentation:
+  title: Payments Platform
+  subtitle: Production infrastructure
+  source: Architecture Team, 2026-09-25
 
 select:
   tags: [runtime]
@@ -573,7 +587,19 @@ layout:
 
 A sequence view references exactly one `scenarioId` in v0.1. Combining scenarios requires separate views; multi-scenario composition is deferred until ordering and presentation semantics are defined.
 
-### 10.6. Selection semantics
+### 10.6. Presentation metadata
+
+The optional `presentation` object provides diagram-specific text while all styling and placement remain global:
+
+| Field | Limit | Meaning |
+|---|---:|---|
+| `title` | 120 characters | Primary diagram title. |
+| `subtitle` | 200 characters | Optional secondary context. |
+| `source` | 500 characters | Source attribution inserted into the configured footer template. |
+
+Values are plain text and MAY contain Unicode, but MUST NOT contain D2, HTML or SVG markup. Missing values omit the corresponding text element. The project logo is controlled exclusively by Project Configuration and cannot be replaced or disabled per view in v0.1.
+
+### 10.7. Selection semantics
 
 The selection contract covers:
 
@@ -679,9 +705,11 @@ Manual coordinates are outside the MVP contract.
 
 ## 13. Design system
 
-### 13.1. Ownership
+### 13.1. Global customization policy
 
-All visual properties MUST be owned by framework libraries and the D2 generator. Models and view specifications MUST NOT contain raw D2 style declarations or RGB/HEX values.
+All visual properties MUST be owned by framework libraries, one project-wide Theme/Brand Pack and the D2 generator. System Models and View Specifications MUST NOT contain raw D2 style declarations, RGB/HEX values, font names, logo paths or per-diagram theme selection.
+
+A project uses exactly one active theme for a build. Per-view theme or brand overrides are invalid in v0.1. Raw visual values are permitted only inside a validated `theme.yaml` belonging to the selected Theme/Brand Pack.
 
 An element class MAY be derived from:
 
@@ -690,7 +718,130 @@ An element class MAY be derived from:
 - emphasis calculated from the view,
 - optional technology icon.
 
-### 13.2. Design tokens
+### 13.2. Project Configuration
+
+An optional project-root `flowframe.yaml` applies to every diagram in that project. Its v0.1 contract includes the selected theme and global decoration policy:
+
+```yaml
+schemaVersion: flowframe-config/v1
+theme: company-light
+
+branding:
+  logo:
+    asset: company-logo
+    position: top-right
+
+  title:
+    position: top-center
+
+  footer:
+    enabled: true
+    template: "Source: {source}"
+    position: bottom-left
+```
+
+Allowed positions are:
+
+- logo: `top-left` or `top-right`,
+- title: `top-left` or `top-center`,
+- footer: `bottom-left`, `bottom-center` or `bottom-right`.
+
+The footer template MAY contain static text and zero or one `{source}` placeholder. A template without `{source}` is rendered as a static footer whenever the footer is enabled. A template containing `{source}` is omitted when the view has no `presentation.source`.
+
+Template parsing uses these deterministic rules:
+
+- `{source}` inserts the source value as escaped plain text,
+- `{{` produces a literal `{`,
+- `}}` produces a literal `}`,
+- any unmatched single brace, unknown placeholder or second `{source}` occurrence is a validation error,
+- braces contained in the source value are data and are not parsed again.
+
+The CLI MUST accept an explicit `--config` path. Without it, FlowFrame searches upward from the System Model path for the nearest `flowframe.yaml`; if none exists, it uses the versioned built-in configuration.
+
+The project root is the directory containing the resolved `flowframe.yaml`. Project theme IDs resolve from `<project-root>/themes/<theme-id>/`. If no project configuration exists, the System Model directory is the effective project root and only built-in themes are considered. Built-in themes are immutable package resources shipped inside the installed FlowFrame distribution; they do not live in the project `themes/` directory. Resolution checks a project theme first and then the built-in package resources. The resolved configuration path or built-in ID and the resolved theme origin MUST be recorded in the manifest.
+
+### 13.3. Theme/Brand Pack
+
+A Theme/Brand Pack is a versioned, project-wide package:
+
+```text
+themes/company-light/
+├── theme.yaml
+├── assets/
+│   ├── logo.svg
+│   └── fonts/
+└── LICENSES.md
+```
+
+`theme.yaml` MUST declare:
+
+- schema version, theme ID and theme version,
+- design-token values,
+- semantic mappings from element kinds and relation semantics to tokens,
+- local font asset references when custom fonts are used,
+- named brand assets with local paths, media types, accessible alternative text and bounded display dimensions,
+- decoration tokens for title, subtitle, footer and logo spacing.
+
+Example:
+
+```yaml
+schemaVersion: flowframe-theme/v1
+id: company-light
+version: "1"
+
+tokens:
+  background: "#FFFFFF"
+  surface: "#F7F9FC"
+  surface-muted: "#EEF2F7"
+  border: "#54606E"
+  text-primary: "#17202A"
+  text-secondary: "#52606D"
+  title-text: "#17202A"
+  subtitle-text: "#52606D"
+  footer-text: "#52606D"
+  decoration-gap: 16
+  primary: "#0057B8"
+  secondary: "#5C6AC4"
+  compute: "#DCEEFF"
+  database: "#E8DCF8"
+  messaging: "#FFF1CC"
+  storage: "#DFF3E4"
+  security: "#FFE4C4"
+  external: "#ECEFF1"
+  network: "#DDEBF7"
+  line-request: "#245B8A"
+  line-event: "#8A5A00"
+  line-data: "#5B3F8C"
+  line-dependency: "#59636E"
+  line-control: "#8A2F2F"
+
+mappings:
+  elements:
+    service: compute
+    worker: compute
+    database: database
+    queue: messaging
+  relations:
+    request: line-request
+    event: line-event
+    data-access: line-data
+
+assets:
+  company-logo:
+    path: assets/logo.svg
+    mediaType: image/svg+xml
+    alt: Company logo
+    maxWidth: 120
+    maxHeight: 48
+```
+
+The project configuration references brand assets by ID, never by arbitrary file path. Theme IDs resolve first from the project `themes/` directory and then from built-in themes. Remote themes, fonts and logos are not supported in v0.1.
+
+Semantic mappings MAY override a subset of framework defaults. Any unmapped element kind or relation semantic falls back to the corresponding mapping from the versioned built-in theme; an unknown token reference is a validation error.
+
+Raw RGB/HEX values are allowed only as token values in `theme.yaml`. Component shapes and relation semantics remain framework-owned and cannot be replaced by arbitrary D2 code in a Theme/Brand Pack.
+
+### 13.4. Design tokens
 
 The theme MUST centrally define at least:
 
@@ -702,6 +853,10 @@ border
 
 text-primary
 text-secondary
+title-text
+subtitle-text
+footer-text
+decoration-gap
 
 primary
 secondary
@@ -723,7 +878,7 @@ line-control
 
 D2 classes and variables SHOULD implement these tokens. Because D2 allows object-level properties to override class values, generated or hand-authored D2 MUST be linted if direct D2 input is ever supported.
 
-### 13.3. Relation appearance
+### 13.5. Relation appearance
 
 Relations MUST be distinguishable using more than color. The mapping SHOULD use a combination of:
 
@@ -735,7 +890,31 @@ Relations MUST be distinguishable using more than color. The mapping SHOULD use 
 
 The exact mapping belongs to the versioned theme and MUST NOT be generated by AI.
 
-### 13.4. Accessibility
+### 13.6. Diagram decorations
+
+The decoration generator MAY add:
+
+- the view title and subtitle,
+- the source footer produced from the global template,
+- the project logo selected in `flowframe.yaml`.
+
+Decorations MUST use global theme classes and configured positions. They are presentation objects, not System Model elements and MUST NOT participate in semantic selection or the 7–9 element guideline.
+
+Decoration space is reserved by a deterministic SVG composition step rather than by ELK or TALA:
+
+1. Render and measure the semantic diagram body.
+2. Render title/subtitle, footer and logo as independently measurable SVG fragments using the pinned theme fonts.
+3. Calculate a top band from the maximum title block or logo height and a bottom band from the footer height, adding `decoration-gap` on both sides of every occupied band.
+4. Expand the final canvas and `viewBox`, translate the semantic body below the top band and place decorations into their configured slots.
+5. Expand the canvas width when a decoration is wider than the semantic body plus horizontal padding.
+
+A top slot may contain only one primary decoration; configuring both logo and title for `top-left` is a validation error. The subtitle is part of the title block. The composition step MUST run before final SVG normalization and snapshot comparison. It MUST NOT ask the layout engine to position decorations.
+
+A logo MUST be a local approved SVG asset from the active Theme/Brand Pack. It MUST be embedded or bundled into the output so that SVG rendering remains offline and portable. Its accessible alternative text comes from theme asset metadata.
+
+Asset-level `maxWidth` and `maxHeight` are positive CSS-pixel bounds for the rendered logo box. The composer preserves the intrinsic aspect ratio and fits the logo within that box. These requested bounds MUST remain below implementation-wide security limits for dimensions, source bytes, element count and nesting depth; a Theme/Brand Pack cannot raise the global limits.
+
+### 13.7. Accessibility
 
 The v0.1 theme MUST:
 
@@ -744,9 +923,10 @@ The v0.1 theme MUST:
 - avoid color as the only semantic signal,
 - use readable default font sizes,
 - provide visible relation labels where required,
-- support a generated textual summary or accessible description.
+- support a generated textual summary or accessible description,
+- expose the diagram title and logo alternative text in the generated SVG accessibility metadata when supported by the renderer.
 
-### 13.5. Icons
+### 13.8. Icons
 
 ```text
 icons/
@@ -810,14 +990,16 @@ Validation is part of the first vertical slice, not a late implementation phase.
 
 ```text
 1. YAML parsing
-2. JSON Schema validation
-3. semantic model validation
-4. view selection and capability validation
-5. normalized IR validation
-6. D2 generation lint
-7. d2 validate
-8. render exit-status validation
-9. optional SVG and visual checks
+2. Project Configuration and Theme/Brand Pack schema validation
+3. System Model and View Specification schema validation
+4. semantic model validation
+5. view selection and capability validation
+6. presentation and asset-policy validation
+7. normalized IR validation
+8. D2 generation lint
+9. d2 validate
+10. render exit-status validation
+11. optional SVG and visual checks
 ```
 
 ### 15.2. Required semantic checks
@@ -832,7 +1014,11 @@ Validation is part of the first vertical slice, not a late implementation phase.
 - view family/subtype compatibility,
 - valid selection fields and traversal limits,
 - compatibility of layout options with the selected engine,
-- no raw visual styles in source models,
+- valid Project Configuration, theme ID, theme version and brand asset references,
+- supported decoration positions and footer template placeholders,
+- presentation text length and plain-text requirements,
+- no per-view visual overrides or raw visual styles in System Models and View Specifications,
+- Theme/Brand Pack token values and semantic mappings conform to the theme schema,
 - no disallowed remote assets,
 - no empty mandatory labels.
 
@@ -868,6 +1054,7 @@ Warnings MUST NOT change generated semantics automatically.
   "schemaVersion": "flowframe-manifest/v1",
   "flowframeVersion": "0.1.0",
   "source": {
+    "config": { "path": "flowframe.yaml", "schemaVersion": "flowframe-config/v1", "sha256": "..." },
     "model": { "path": "system-model.yaml", "schemaVersion": "flowframe/v1", "sha256": "..." },
     "view": { "path": "infrastructure-view.yaml", "schemaVersion": "flowframe/v1", "sha256": "..." }
   },
@@ -877,7 +1064,7 @@ Warnings MUST NOT change generated semantics automatically.
     "layoutEngineVersion": "...",
     "flags": []
   },
-  "theme": { "id": "flowframe-light", "version": "1" },
+  "theme": { "id": "company-light", "version": "1", "sha256": "..." },
   "outputs": {
     "d2": { "path": "diagram.d2", "sha256": "..." },
     "svg": { "path": "diagram.svg", "sha256": "..." }
@@ -888,19 +1075,23 @@ Warnings MUST NOT change generated semantics automatically.
 
 Paths in the manifest MUST be relative to the build root. Hashes MUST use SHA-256. `layoutEngineVersion` MAY be `null` only when the engine does not expose a version. The generation timestamp appears only in the manifest, not in deterministic D2 source.
 
+When the built-in configuration is used, `source.config` MUST use `{ "builtInId": "flowframe-default", "version": "1" }` instead of a path-based record. The theme hash covers `theme.yaml` and every referenced font, logo and brand asset in deterministic path order.
+
 The same inputs and pinned toolchain MUST generate byte-identical `diagram.d2`. SVG stability MUST be tested using normalized snapshots because renderer metadata may differ between versions.
 
 TALA builds SHOULD use a fixed seed when the installed version supports it.
 
 ### 16.2. Offline operation
 
-The default validation and build path MUST NOT require network access. Fonts, themes and MVP icons MUST be locally available and pinned.
+The default validation and build path MUST NOT require network access. Fonts, themes, logos, brand assets and MVP icons MUST be locally available and pinned.
 
 ### 16.3. SVG portability
 
 The implementation MUST define and test:
 
 - whether fonts and icons are bundled,
+- whether the configured logo is embedded and remains visible in each supported consumer,
+- title, subtitle and footer placement without clipping diagram content,
 - supported documentation renderers and browsers,
 - behavior when an icon cannot be embedded,
 - maximum accepted input and output sizes,
@@ -912,6 +1103,7 @@ The implementation MUST define and test:
 - File imports MUST be restricted to explicitly allowed project roots.
 - Generated paths MUST not escape the output directory.
 - Remote resources MUST be disabled unless explicitly allowed.
+- Theme and logo SVG assets MUST be sanitized and MUST NOT contain scripts, external references or `foreignObject` content.
 - D2 execution MUST have a timeout and a bounded output size.
 - CI SHOULD run rendering in an isolated environment.
 - Untrusted source documentation supplied to AI MUST be treated as data, not as executable instructions.
@@ -931,6 +1123,8 @@ flowframe compare-layouts MODEL VIEW --output-dir build/layouts/
 flowframe review MODEL VIEW
 flowframe version
 ```
+
+Commands that consume a System Model and View Specification MUST accept `--config CONFIG`. If omitted, they use the deterministic project-root resolution defined in section 13.2.
 
 ### 17.1. Exit codes
 
@@ -1073,6 +1267,7 @@ flowframe/
 ├── README.md
 ├── LICENSE
 ├── pyproject.toml
+├── flowframe.yaml
 │
 ├── src/flowframe/
 │   ├── cli.py
@@ -1084,9 +1279,17 @@ flowframe/
 │   └── diagnostics.py
 │
 ├── schema/
+│   ├── flowframe-config.schema.json
 │   ├── system-model.schema.json
 │   ├── view.schema.json
+│   ├── theme.schema.json
 │   └── manifest.schema.json
+│
+├── themes/
+│   └── flowframe-light/
+│       ├── theme.yaml
+│       ├── assets/
+│       └── LICENSES.md
 │
 ├── lib/
 │   ├── theme.d2
@@ -1147,6 +1350,7 @@ Scope:
 - compare ELK and TALA on representative diagrams,
 - verify sequence-diagram support,
 - verify offline icon and font bundling,
+- verify title, footer and embedded local logo rendering with ELK,
 - document TALA licensing and installation constraints,
 - confirm SVG behavior in target documentation systems.
 
@@ -1163,7 +1367,9 @@ Scope:
 
 - System Model v1 schema,
 - View Specification v1 schema,
+- Project Configuration v1 and Theme/Brand Pack v1 schemas,
 - manifest v1 schema,
+- deterministic project configuration resolution,
 - YAML parser and safe loading,
 - semantic validator and diagnostics,
 - infrastructure projection,
@@ -1175,7 +1381,7 @@ Scope:
 Exit criteria:
 
 ```text
-system-model.yaml + infrastructure-view.yaml
+flowframe.yaml + system-model.yaml + infrastructure-view.yaml
 → validate
 → diagram.d2
 → diagram.svg + manifest.json
@@ -1186,7 +1392,9 @@ system-model.yaml + infrastructure-view.yaml
 Scope:
 
 - tokens and theme,
+- built-in Theme/Brand Pack and one custom brand fixture,
 - component, boundary and connection classes,
+- title, subtitle, footer and logo decoration classes,
 - generic icon set and license metadata,
 - accessibility rules,
 - grayscale and contrast tests,
@@ -1239,19 +1447,21 @@ Scope:
 
 FlowFrame v0.1 is accepted when all of the following are true:
 
-1. All example models and views pass schema and semantic validation.
-2. Invalid references, containment cycles and unsupported values produce stable, actionable diagnostics.
-3. The same source files and pinned toolchain generate byte-identical D2.
+1. All example configurations, models, views and themes pass schema and semantic validation.
+2. Invalid references, containment cycles, brand assets and unsupported values produce stable, actionable diagnostics.
+3. The same configuration, model, view and pinned toolchain generate byte-identical D2.
 4. All MVP examples render offline with ELK in local and CI environments.
-5. Generated D2 contains no raw styles originating from System Model or View Specification files.
-6. Infrastructure, integration-flow and sequence examples are produced from the same reusable System Model where applicable.
-7. SVG snapshots show no clipped labels or overlapping nodes in the golden corpus.
-8. Diagram meaning remains understandable in grayscale.
-9. Text and essential strokes meet the selected WCAG AA contrast targets.
-10. The manifest records all versions, input hashes and renderer options needed to reproduce the build.
-11. Renderer failures and timeouts return documented non-zero exit codes and do not report success based on partial output files.
-12. The AI evaluation corpus reaches an agreed schema-validity threshold and does not introduce raw styling fields.
-13. One documented command builds every example from source.
+5. Every diagram in one project uses the same resolved Theme/Brand Pack, and per-view visual overrides are rejected.
+6. A custom brand fixture consistently renders its global color mappings, embedded logo, title and source footer across all MVP families.
+7. Generated D2 contains no raw styles originating from System Model or View Specification files.
+8. Infrastructure, integration-flow and sequence examples are produced from the same reusable System Model where applicable.
+9. SVG snapshots show no clipped labels, overlapping nodes or decorations obscuring diagram content in the golden corpus.
+10. Diagram meaning remains understandable in grayscale.
+11. Text and essential strokes meet the selected WCAG AA contrast targets.
+12. The manifest records configuration, theme and input hashes together with all renderer versions and options needed to reproduce the build.
+13. Renderer failures and timeouts return documented non-zero exit codes and do not report success based on partial output files.
+14. The AI evaluation corpus reaches an agreed schema-validity threshold and does not introduce raw styling fields.
+15. One documented command builds every example from source.
 
 The exact AI quality threshold and render-performance budget MUST be set after Stage 0 establishes a baseline. They must be specified before v0.1 is declared complete.
 
@@ -1261,7 +1471,7 @@ The exact AI quality threshold and render-performance budget MUST be set after S
 
 ### 23.1. Test categories
 
-- JSON Schema positive and negative fixtures,
+- JSON Schema positive and negative fixtures for Project Configuration, Theme/Brand Pack, System Model, View Specification and manifest,
 - semantic-validator unit tests,
 - projection tests for every family,
 - deterministic D2 golden tests,
@@ -1269,8 +1479,10 @@ The exact AI quality threshold and render-performance budget MUST be set after S
 - normalized SVG snapshots,
 - offline-build tests,
 - accessibility checks,
+- global-theme consistency tests across multiple views,
+- title, subtitle, footer and logo snapshot tests,
 - CLI exit-code tests,
-- security tests for unsafe YAML, path traversal and remote assets,
+- security tests for unsafe YAML, path traversal, unsafe SVG brand assets and remote assets,
 - AI evaluations separated from deterministic core tests.
 
 ### 23.2. Golden corpus
@@ -1284,6 +1496,8 @@ The MVP corpus SHOULD contain at least:
 - nested boundaries,
 - missing optional icons,
 - long labels and Unicode labels,
+- a custom global theme with title, source footer and embedded logo,
+- views with omitted optional presentation fields,
 - intentionally invalid models for diagnostic tests.
 
 Human visual review remains part of release approval until reliable automated layout-quality metrics are established.
@@ -1300,6 +1514,8 @@ Human visual review remains part of release approval until reliable automated la
 | AI invents architecture facts | misleading diagrams | uncertainty reporting, source-conformance mode, validation |
 | Overloaded semantic vocabulary | inconsistent diagrams | orthogonal fields and documented enums |
 | Remote icons break offline builds | non-reproducible output | local approved assets, remote resources disabled |
+| Unsafe or unlicensed brand assets | security or legal exposure | validated local assets, SVG sanitization, mandatory license metadata |
+| Per-view branding drifts from project identity | inconsistent documentation | one project configuration; reject per-view visual overrides |
 | D2 classes are overridden | inconsistent styling | generated D2 only, linting, no style fields in source schemas |
 | Automatic review changes semantics | architecture corruption | immutable System Model during layout improvement, visible diff |
 | Sequence requirements outgrow static relations | incompatible model | explicit ordered scenarios and Sequence IR |
@@ -1321,6 +1537,8 @@ The following decisions must be resolved during Stage 0 or Stage 1:
 8. AI evaluation threshold and representative prompt corpus.
 9. Performance budget for small and medium diagrams.
 10. Whether v0.1 needs a dark theme or only the light baseline.
+11. Supported custom font formats and embedding policy.
+12. Maximum logo dimensions and SVG asset size limits.
 
 ---
 
@@ -1335,6 +1553,7 @@ FlowFrame v0.1-alpha.1
 It MUST accept:
 
 ```text
+examples/payments/flowframe.yaml
 examples/payments/system-model.yaml
 examples/payments/infrastructure-view.yaml
 ```

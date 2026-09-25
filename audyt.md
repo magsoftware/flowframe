@@ -97,3 +97,25 @@ Poniżej problemy i propozycje rozwiązań.
 ## Podsumowanie
 
 Do poprawy przede wszystkim: **`maxDepth`/`relatedDepth`**, **boundary kind `system`**, **kolizja `direction`**, **brakujące enumy** oraz **synchronizacja README z PRD**.
+
+---
+
+## 5. Mechanizm personalizacji — krytyka i rekomendacje (dodatek, 2026-09-25)
+
+Mechanizm `flowframe.yaml` + Theme/Brand Pack + dekoracje jest spójny i dobrze wpleciony w PRD oraz README. Uwagi do dopracowania (sugestie, bez ingerencji w dokumenty):
+
+1. **Niespójna nazwa schematu konfiguracji.** Plik to `schema/project-config.schema.json` (§20), a `schemaVersion` to `flowframe-config/v1` (§13.2, §16.1). **Rekomendacja:** ujednolicić do jednej nazwy (np. `flowframe-config.schema.json` + `flowframe-config/v1`).
+
+2. **Niejasna lokalizacja wbudowanych motywów.** §13.3: „Theme IDs resolve first from the project `themes/` directory and then from built-in themes", ale nie wiadomo, gdzie fizycznie są motywy wbudowane (repo czy dane pakietu) i względem czego liczony jest „project `themes/`". **Rekomendacja:** korzeń = katalog rozwiązanego `flowframe.yaml`; motywy wbudowane trzymać w danych pakietu, nie w `themes/` projektu.
+
+3. **Sanitizacja SVG logo bez whitelisty.** §16.4 zabrania skryptów, referencji zewnętrznych i `foreignObject`, ale nie definiuje, co jest dozwolone — sanitizer może zepsuć logo oparte o gradienty/filtry/clipPath/wewnętrzne `url(#id)`. **Rekomendacja:** jawna whitelista cech SVG: dozwolone `linearGradient`, `radialGradient`, `clipPath`, `mask`, wewnętrzne `url(#id)`; zabronione `<script>`, `foreignObject`, handlery zdarzeń, zewnętrzne `url(http…)`, `@import`, `<style>` z referencjami zewnętrznymi.
+
+4. **Mechanizm rezerwacji miejsca pod dekoracje nieokreślony.** D2/TALA/ELK nie rezerwują paddingu dla tytułu/stopki/loga dodawanych po layoucie; §13.6 wymaga „reserve sufficient padding", ale nie mówi jak. **Rekomendacja:** dekoracje renderować w warstwie otaczającej z marginesem canvas liczonym z tokenów (`decoration-gap`), a test „bez nakładania na treść" uwzględnić w spike Stage 0 (obecny wpis to tylko „verify title, footer and embedded local logo rendering").
+
+5. **Stopka nie obsługuje tekstu statycznego bez `{source}`.** Gdy widok nie ma `presentation.source`, stopka jest pomijana w całości — nie da się wyświetlić stałego tekstu. **Rekomendacja:** dopuścić template bez placeholderów (tekst statyczny) lub jawnie udokumentować to ograniczenie.
+
+6. **Escaping placeholderów.** §13.2 mówi o „escaped `{source}` placeholder", ale nie definiuje reguły escapowania literalnych `{`/`}`. **Rekomendacja:** zdefiniować regułę (np. `{{` → `{`) spójnie z walidacją „unknown placeholders are errors".
+
+7. **Redundancja limitów logo.** W theme są per-asset `maxWidth`/`maxHeight` (§13.3), a §25/12 pyta o „Maximum logo dimensions and SVG asset size limits". **Rekomendacja:** rozdzielić per-asset bounds (theme) od globalnych limitów (walidacja/bezpieczeństwo) i doprecyzować oba.
+
+8. **Determinizm sanitizera (opcjonalne).** Wynik sanitizacji logo zależy od wersji sanitizera. **Rekomendacja:** rejestrować wersję/algorytm sanitizera w manifeście dla pełnej reprodukowalności.

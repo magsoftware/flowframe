@@ -30,7 +30,7 @@ Natural language / source documentation
           optional AI adapter
                  │
                  ▼
-          System Model + View
+   Project Configuration + System Model + View
                  │
                  ▼
        schema + semantic validation
@@ -54,7 +54,7 @@ Natural language / source documentation
 The source of truth is:
 
 ```text
-system-model.yaml + view.yaml
+[flowframe.yaml + selected Theme/Brand Pack] + system-model.yaml + view.yaml
 ```
 
 The generated artifacts are:
@@ -81,7 +81,7 @@ FlowFrame v0.1 targets:
 - deterministic D2 generation,
 - offline SVG rendering with a pinned D2 CLI,
 - ELK as the default layout engine,
-- a centralized accessible light theme,
+- a centralized accessible light theme and one project-wide custom Theme/Brand Pack,
 - golden-file and normalized SVG snapshot tests,
 - one AI adapter producing System Model and View Specification files.
 
@@ -149,6 +149,11 @@ subtype: infrastructure
 audience: architect
 detail: medium
 
+presentation:
+  title: Payments Platform
+  subtitle: Production infrastructure
+  source: Architecture Team, 2026-09-25
+
 select:
   tags: [runtime]
   includeRelated: true
@@ -165,6 +170,8 @@ layout:
 ```
 
 Architecture, flow and sequence projections use separate normalized intermediate representations while retaining references to the original model IDs.
+
+Project-wide colors, fonts, logo placement and footer formatting are selected once in `flowframe.yaml`. Individual views provide only presentation text; they cannot override the theme or logo.
 
 ---
 
@@ -193,6 +200,8 @@ flowframe compare-layouts MODEL VIEW --output-dir build/layouts/
 flowframe review MODEL VIEW
 ```
 
+Commands that consume a model and view accept an optional `--config flowframe.yaml` argument.
+
 These commands describe the v0.1 contract and are not implemented yet.
 
 ---
@@ -200,6 +209,8 @@ These commands describe the v0.1 contract and are not implemented yet.
 ## Design and accessibility
 
 - Models and views cannot contain raw D2 styles or RGB/HEX colors.
+- Custom colors are defined only in a validated project-wide `theme.yaml`.
+- The project logo, title placement and source-footer template are configured globally in `flowframe.yaml`.
 - Relation meaning must not rely on color alone.
 - The baseline theme targets WCAG AA contrast.
 - Diagrams must remain understandable in grayscale.
