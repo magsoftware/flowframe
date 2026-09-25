@@ -161,7 +161,9 @@ src/flowframe/
 │   └── writer.py
 └── resources/
     ├── schemas/
-    └── themes/flowframe-light/
+    ├── themes/flowframe-light/
+    ├── d2/
+    └── icons/generic/
 ```
 
 Public entry points SHOULD be limited to the CLI and a small facade in `api.py`. Internal modules MAY change before v1 without compatibility guarantees.
@@ -174,11 +176,11 @@ Public entry points SHOULD be limited to the CLI and a small facade in `api.py`.
 
 The canonical schemas are:
 
-- `schema/flowframe-config.schema.json` for `flowframe-config/v1`,
-- `schema/system-model.schema.json` for `flowframe/v1` System Models,
-- `schema/view.schema.json` for `flowframe/v1` View Specifications,
-- `schema/flowframe-theme.schema.json` for `flowframe-theme/v1`,
-- `schema/flowframe-manifest.schema.json` for `flowframe-manifest/v1`.
+- `src/flowframe/resources/schemas/flowframe-config.schema.json` for `flowframe-config/v1`,
+- `src/flowframe/resources/schemas/system-model.schema.json` for `flowframe/v1` System Models,
+- `src/flowframe/resources/schemas/view.schema.json` for `flowframe/v1` View Specifications,
+- `src/flowframe/resources/schemas/flowframe-theme.schema.json` for `flowframe-theme/v1`,
+- `src/flowframe/resources/schemas/flowframe-manifest.schema.json` for `flowframe-manifest/v1`.
 
 Schemas MUST set `additionalProperties: false` at every closed object boundary. Extensions, if later supported, require a dedicated namespaced field rather than accepting misspelled properties.
 
@@ -383,6 +385,8 @@ Potentially influential `D2_*` environment variables MUST be cleared unless expl
 
 The wrapper records executable hash where practical, reported D2 version, layout engine and version if exposed, arguments and normalized failure details. A timeout or non-zero exit is an error even if a partial SVG exists. Partial outputs MUST be removed or left only in a diagnostic temporary directory, never published as successful artifacts.
 
+`d2 validate` is present in D2 v0.9.0 and is the intended syntax-validation boundary. Stage 0 MUST verify that the finally pinned D2 version still provides the command and its expected exit behavior; FlowFrame MUST NOT substitute `d2 fmt --check` because formatting conformance is not syntax validation. The upstream reference is the [D2 CLI manual](https://d2lang.com/tour/man/).
+
 Build artifacts are first written to a sibling staging directory and moved into the target only after the complete build succeeds. A failed build MUST NOT mix new and previous artifacts.
 
 ---
@@ -446,6 +450,13 @@ The title and subtitle share one primary top slot. A logo and title configured f
 An absent optional decoration occupies no band. Decoration spacing is deterministic and comes from the theme, not from View metadata.
 
 Text measurement MUST use shipped or project-approved pinned fonts. If exact headless measurement cannot be made reproducible during Stage 0, the implementation MUST choose and document a deterministic metric strategy before Stage 1; host-dependent browser measurement is not acceptable for the release path.
+
+Deterministic measurement does not by itself guarantee identical consumer rendering. The Stage 0 ADR MUST select one output-wide text policy:
+
+- preserve accessible/searchable SVG `<text>` and pin or embed fonts, accepting documented rasterization differences between consumers, or
+- convert visible text to deterministic paths, accepting larger output and loss of native selection/search while providing per-object accessible names/descriptions plus a generated textual summary.
+
+The policy applies to D2 body text and FlowFrame decorations. Path conversion cannot be selected unless the accessibility baseline remains satisfied. A hybrid policy is allowed only if the ADR defines a clear boundary and tests both portability and accessibility; it MUST NOT arise accidentally from two independent render paths.
 
 Sanitized-logo hashes cover the canonical standalone asset. During embedding, the compositor MUST deterministically rename any asset IDs that collide with body or decoration IDs and update all fragment references. Collision handling MUST NOT mutate the stored standalone sanitized bytes or their manifest hash. Generated title and logo accessibility nodes use the same collision-safe ID allocator.
 
@@ -541,18 +552,35 @@ Manifest paths are relative to the build root as required by the PRD; absolute h
 Initial commands:
 
 ```text
-flowframe validate --model MODEL --view VIEW [--config CONFIG]
-flowframe compile  --model MODEL --view VIEW [--config CONFIG] --output FILE
-flowframe render   --input D2 --output SVG [--layout elk]
-flowframe build    --model MODEL --view VIEW [--config CONFIG] --output-dir DIR
-flowframe compare-layouts ...
-flowframe review ...
+flowframe validate --model MODEL --view VIEW [--config CONFIG] [--format text|json]
+flowframe compile --model MODEL --view VIEW [--config CONFIG] --output D2
+flowframe render --input D2 --layout ENGINE --output SVG
+flowframe build --model MODEL --view VIEW [--config CONFIG] --output-dir DIR
 flowframe version
 ```
 
 `validate` runs all checks that do not require D2 rendering. `compile` validates and emits D2. `render` is a low-level controlled rendering command and does not accept arbitrary remote assets. `build` executes the complete transactional pipeline and is the normal user command.
 
 Human diagnostics go to stderr. Machine-readable output MAY be selected with `--format json` and MUST preserve diagnostic codes and locations. Successful artifact paths MAY be printed to stdout. The low-level `render` command applies the same D2 policy lint as `compile` output, including rejection of remote resources and unsupported imports, before it invokes D2.
+
+Stage 4 adds:
+
+```text
+flowframe review --model MODEL --view VIEW [--config CONFIG]
+  [--svg SVG] [--source SOURCE] [--mode MODE]
+  [--format text|json]
+```
+
+`--source` and `--mode` are repeatable. Allowed modes are `syntax`, `semantic`, `policy`, `source-conformance` and `visual`. With no explicit mode it runs `syntax`, `semantic` and `policy`. Source-conformance and visual modes require their corresponding optional adapter and inputs. The command is read-only and returns findings without modifying model, view or configuration. Error findings return 1, except policy errors return 5; warnings alone return 0, invalid option combinations return 2 and a missing requested adapter returns 3.
+
+Post-MVP layout comparison uses:
+
+```text
+flowframe compare-layouts --model MODEL --view VIEW [--config CONFIG]
+  --layout ENGINE --layout ENGINE [--output-dir DIR]
+```
+
+It compiles once and renders identical D2 with at least two explicitly selected engines, writing each result below `DIR/<engine>/`. Fewer than two distinct engines returns 2, a missing engine returns 3 and any engine render failure returns 4 without publishing a successful comparison. Fallback is forbidden. This command is not a v0.1 release gate.
 
 Exit codes follow the PRD contract:
 
@@ -564,8 +592,9 @@ Exit codes follow the PRD contract:
 | 3 | Missing external dependency |
 | 4 | Renderer failure or timeout |
 | 5 | Policy or security violation |
+| 6 | Unexpected internal failure |
 
-An unexpected internal failure is reported with an `FFX` diagnostic and returns code 1 in v0.1; it MUST NOT be presented as a user-input validation error. Exact code-to-category assignments MUST be covered by CLI contract tests. A command returning non-zero MUST not claim that outputs are current.
+An unexpected internal failure is reported with an `FFX` diagnostic and returns code 6; it MUST NOT be presented as a user-input validation error. Exact code-to-category assignments MUST be covered by CLI contract tests. A command returning non-zero MUST not claim that outputs are current.
 
 ---
 
@@ -673,13 +702,16 @@ Theme packs declare their own version independently of FlowFrame. The sanitizer 
 Implementation MUST not guess these values:
 
 1. exact pinned D2 version and installation/checksum strategy,
-2. deterministic text-measurement approach and supported font formats,
+2. output-wide SVG text policy: deterministic measurement, `<text>` versus paths, font embedding/formats and accessibility consequences,
 3. SVG normalization library/algorithm after real D2 output is sampled,
 4. numeric global limits for inputs, logos, XML complexity, canvas size, subprocess output and timeout,
 5. initial generic icon set and license,
 6. supported documentation renderers/browsers,
 7. committed-versus-CI-generated SVG policy,
 8. release performance budgets,
-9. minimum AI evaluation threshold.
+9. minimum AI evaluation threshold,
+10. exact policy for displaying technology names and protocols at every detail level.
 
 Each decision is captured as an ADR with context, tested alternatives, decision and consequences. The actionable order and acceptance gates are defined in [`implementation-plan.md`](implementation-plan.md).
+
+Dark theme is deliberately absent from this list because it is post-MVP, consistent with the PRD and P9.

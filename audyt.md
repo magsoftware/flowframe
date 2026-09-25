@@ -119,3 +119,53 @@ Mechanizm `flowframe.yaml` + Theme/Brand Pack + dekoracje jest spójny i dobrze 
 7. **Redundancja limitów logo.** W theme są per-asset `maxWidth`/`maxHeight` (§13.3), a §25/12 pyta o „Maximum logo dimensions and SVG asset size limits". **Rekomendacja:** rozdzielić per-asset bounds (theme) od globalnych limitów (walidacja/bezpieczeństwo) i doprecyzować oba.
 
 8. **Determinizm sanitizera (opcjonalne).** Wynik sanitizacji logo zależy od wersji sanitizera. **Rekomendacja:** rejestrować wersję/algorytm sanitizera w manifeście dla pełnej reprodukowalności.
+
+---
+
+## 6. Audyt `technical-spec.md` i `implementation-plan.md` (2026-09-25)
+
+Oba dokumenty są wysokiej jakości, dobrze rozwarstwione (spec: kontrakty/architektura/bezpieczeństwo; plan: fazy z bramkami wyjścia) i wzajemnie spójne. Przy okazji domykają wcześniejsze uwagi: pełna gramatyka stopki (`{{`/`}}`, stopka statyczna — spec §12.2), rozdzielenie limitów per-asset od globalnych (§13.1), `source`/`target` wymagane dla relacji nieskierowanych (§8.1), normatywny profil sanitizera jako osobny dokument (§13.2 + `rules/svg-logo-profile-v1.md`).
+
+Główne problemy to **rozjazd z PRD** (który spec sam uznaje za autorytatywny) oraz **rozjazd kontraktu CLI**.
+
+### Problemy i rekomendacje
+
+1. **Nazwy schematów: PRD vs spec (konflikt autorytetu).** PRD §20: `project-config.schema.json`, `theme.schema.json`, `manifest.schema.json`; spec §6.1 i plan P1.3/P1.6: `flowframe-config.schema.json`, `flowframe-theme.schema.json`, `flowframe-manifest.schema.json`. Spec deklaruje „if the documents disagree, follow the PRD" — a więc to błąd do naprawy. **Rekomendacja:** ujednolicić w PRD §20 do nazw `flowframe-*`.
+
+2. **Kontrakt CLI rozjechany między 4 dokumentami.** PRD §17 i README: pozycyjne `MODEL VIEW`, `--out`, `render diagram.d2 --layout elk`. Spec §16: flagi `--model/--view/--config`, `--input/--output`. **Rekomendacja:** wybrać jedną formę — sugeruję flagi (`--model`, `--view`, `--config`, `--output-dir`), bo są spójne z `--config` i rozszerzalne — i zaktualizować PRD §17 oraz README. Pozycyjne `MODEL VIEW` zostawić tylko, jeśli jest to świadomy wybór ergonomii.
+
+3. **Gramatyka stopki: spec idzie dalej niż PRD.** PRD §13.2 mówi tylko o placeholderze `{source}`; spec §12.2 definiuje literal + escapowanie `{{`/`}}` + stopkę statyczną (plan P0.4/P4.5 to testuje). **Rekomendacja:** przenieść pełną gramatykę do PRD §13.2 (PRD jest źródłem prawdy), a w specu zostawić samą implementację.
+
+4. **Lokalizacja wbudowanego motywu.** PRD §20 pokazuje `themes/flowframe-light/` w korzeniu repo; spec §5/§6.3 pakuje go jako `resources/themes/flowframe-light/`. **Rekomendacja:** ujednolicić; w PRD §20 rozdzielić „project `themes/`" (motywy użytkownika) od pakowanych zasobów wbudowanych.
+
+5. **Brak kodu wyjścia dla błędu wewnętrznego.** PRD §17.1 ma kody 0–5, bez kodu awarii; spec §16 mapuje `FFX` → 1, czyli ten sam kod co błąd walidacji. Skrypty nie odróżnią „zły input" od „awaria narzędzia". **Rekomendacja:** dodać osobny kod (np. 6) w PRD i spec dla nieoczekiwanych błędów wewnętrznych.
+
+6. **Determinizm tekstu vs. rendering u konsumenta (największe ryzyko techniczne).** Spec §12.3 wymaga deterministycznego pomiaru bez przeglądarki, ale tekst SVG renderuje konsument (font rendering), więc identyczny pomiar ≠ identyczny wygląd wszędzie. **Rekomendacja:** ADR Stage 0 powinien wprost rozstrzygnąć: (a) deterministyczny pomiar (fontTools) + tekst jako `<text>` (lepsza dostępność, wygląd zależny od konsumenta) **albo** (b) konwersja tekstu na ścieżki (pełna przenośność, gorsza a11y). Nie mieszać milcząco.
+
+7. **`d2 validate` — do potwierdzenia w P0.** Spec §8.10/§11 i plan P0.2 zakładają tryb validate/check D2. **Rekomendacja:** potwierdzić w spike, czy D2 udostępnia `validate`/`check`; jeśli nie — polegać na kodzie wyjścia renderu i `d2 fmt --check`.
+
+8. **Open decisions: spec §22 pomija PRD §25 #7 (polityka wyświetlania technologii/protokołów) i #10 (dark theme).** **Rekomendacja:** dopisać obie pozycje do spec §22 albo jawnie oddelegować (dark theme → P9; protocol policy → ADR Stage 0/1).
+
+9. **Konflikt slotów (title + logo w tym samym top slocie) nie jest w PRD §13.2.** Spec §12.3 i plan P1.3/P4.6 traktują to jako błąd, ale PRD tego nie mówi. **Rekomendacja:** dodać regułę konfliktu slotów do PRD §13.2.
+
+10. **`review` i `compare-layouts` w spec §16 to tylko „…".** **Rekomendacja:** dodać zarys sygnatur i kodów wyjścia albo oznaczyć jako post-MVP/P7 (obecnie `review` ma wymagania w PRD §18.2, a brakuje kontraktu CLI).
+
+11. **Package layout: drobna rozbieżność.** PRD §20 `generators/`, `model.py`; spec §5 `generation/`, `domain/model.py`. **Rekomendacja:** spec §5 jako kanoniczny, PRD §20 uprościć lub zsynchronizować.
+
+### Konkluzja
+
+Plan jest wykonalny i dobrze sekwencjonowany (P0 spike → kontrakty → walidacja → pionowy slice → branding → pozostałe rodziny → hardening → AI → release). Do naprawy przed implementacją: **nazwy schematów, kontrakt CLI i uzupełnienie PRD o gramatykę stopki oraz konflikt slotów** — bo PRD jest autorytatywny, a dziś to spec jest od niego bogatszy.
+
+### Rozstrzygnięcie po weryfikacji
+
+1. **Nieaktualne.** Bieżący PRD §20 używa już `flowframe-config.schema.json`, `flowframe-theme.schema.json` i `flowframe-manifest.schema.json`.
+2. **Zasadne.** Przyjęto nazwane opcje `--model`, `--view`, `--config`, `--input`, `--output` i `--output-dir` we wszystkich dokumentach.
+3. **Nieaktualne.** Bieżący PRD §13.2 zawiera już tekst statyczny, `{source}`, `{{`/`}}` oraz pełne reguły błędów.
+4. **Nieaktualne.** Bieżący PRD §20 umieszcza motyw wbudowany w `src/flowframe/resources/themes/flowframe-light/` i oddziela go od motywów projektu.
+5. **Zasadne.** Dodano kod wyjścia 6 dla nieoczekiwanych błędów wewnętrznych (`FFX`).
+6. **Zasadne i krytyczne.** Stage 0 musi wybrać dla całego SVG tekst z przypiętymi/osadzonymi fontami albo konwersję do ścieżek oraz udokumentować skutki dla przenośności i dostępności.
+7. **Potwierdzone, nie jest błędem.** Lokalny D2 v0.9.0 i oficjalny manual udostępniają `d2 validate`. P0 nadal weryfikuje tę funkcję dla ostatecznie przypiętej wersji.
+8. **Częściowo zasadne.** Politykę technologii/protokołów dodano do decyzji Stage 0. Dark theme nie jest decyzją otwartą: pozostaje jawnie post-MVP.
+9. **Nieaktualne, ale poprawiono czytelność.** Reguła była już w PRD §13.6; §13.2 otrzymał bezpośrednie odesłanie i jawny przykład konfliktu `top-left`.
+10. **Zasadne.** Dodano pełne sygnatury i semantykę `review` oraz `compare-layouts`; drugie polecenie jest jawnie post-MVP.
+11. **Zasadne.** PRD pokazuje teraz ten sam układ pakietu (`domain/`, `generation/` itd.) i wskazuje specyfikację techniczną jako kanoniczną dla szczegółów.

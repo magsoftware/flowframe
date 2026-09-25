@@ -192,15 +192,14 @@ FlowFrame never switches layout engines silently based on a subjective visual-qu
 ## Planned CLI
 
 ```text
-flowframe validate MODEL VIEW
-flowframe compile MODEL VIEW --out diagram.d2
-flowframe render diagram.d2 --layout elk --out diagram.svg
-flowframe build MODEL VIEW --output-dir build/
-flowframe compare-layouts MODEL VIEW --output-dir build/layouts/
-flowframe review MODEL VIEW
+flowframe validate --model MODEL --view VIEW [--config CONFIG]
+flowframe compile --model MODEL --view VIEW [--config CONFIG] --output diagram.d2
+flowframe render --input diagram.d2 --layout elk --output diagram.svg
+flowframe build --model MODEL --view VIEW [--config CONFIG] --output-dir build/
+flowframe review --model MODEL --view VIEW [--config CONFIG] [--mode MODE]
 ```
 
-Commands that consume a model and view accept an optional `--config flowframe.yaml` argument.
+`review` is added with the Stage 4 adapter; deterministic syntax, semantic and policy modes remain available without AI. `compare-layouts` is post-MVP because v0.1 requires only ELK. Its provisional contract is documented in the PRD and technical specification.
 
 These commands describe the v0.1 contract and are not implemented yet.
 

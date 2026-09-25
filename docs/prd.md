@@ -746,6 +746,8 @@ Allowed positions are:
 - title: `top-left` or `top-center`,
 - footer: `bottom-left`, `bottom-center` or `bottom-right`.
 
+Slot-occupancy constraints from section 13.6 are part of Project Configuration validation. In particular, title and logo cannot both occupy `top-left`.
+
 The footer template MAY contain static text and zero or one `{source}` placeholder. A template without `{source}` is rendered as a static footer whenever the footer is enabled. A template containing `{source}` is omitted when the view has no `presentation.source`.
 
 Template parsing uses these deterministic rules:
@@ -1043,6 +1045,8 @@ Unknown element or boundary ID "order-db".
 
 Warnings MUST NOT change generated semantics automatically.
 
+Unexpected internal failures use the `FFX` diagnostic family and exit code 6. They MUST NOT be presented as invalid user input.
+
 ---
 
 ## 16. Rendering, portability and security
@@ -1102,6 +1106,7 @@ The default validation and build path MUST NOT require network access. Fonts, th
 The implementation MUST define and test:
 
 - whether fonts and icons are bundled,
+- whether SVG text remains accessible `<text>` backed by pinned/embedded fonts or is converted to paths for stronger visual portability,
 - whether the configured logo is embedded and remains visible in each supported consumer,
 - title, subtitle and footer placement without clipping diagram content,
 - supported documentation renderers and browsers,
@@ -1160,19 +1165,36 @@ For identical input bytes, sanitizer profile, implementation and version, saniti
 
 ## 17. CLI contract
 
-Proposed commands:
+The core v0.1 commands use named options consistently:
 
 ```text
-flowframe validate MODEL VIEW
-flowframe compile MODEL VIEW --out diagram.d2
-flowframe render diagram.d2 --layout elk --out diagram.svg
-flowframe build MODEL VIEW --output-dir build/
-flowframe compare-layouts MODEL VIEW --output-dir build/layouts/
-flowframe review MODEL VIEW
+flowframe validate --model MODEL --view VIEW [--config CONFIG] [--format text|json]
+flowframe compile --model MODEL --view VIEW [--config CONFIG] --output diagram.d2
+flowframe render --input diagram.d2 --layout elk --output diagram.svg
+flowframe build --model MODEL --view VIEW [--config CONFIG] --output-dir build/
 flowframe version
 ```
 
-Commands that consume a System Model and View Specification MUST accept `--config CONFIG`. If omitted, they use the deterministic project-root resolution defined in section 13.2.
+Commands that consume a System Model and View Specification MUST accept `--config CONFIG`. If omitted, they use the deterministic project-root resolution defined in section 13.2. `--format` controls diagnostics, not generated artifacts.
+
+The Stage 4 review command has this contract:
+
+```text
+flowframe review --model MODEL --view VIEW [--config CONFIG]
+  [--svg SVG] [--source SOURCE] [--mode MODE]
+  [--format text|json]
+```
+
+`--source` and `--mode` are repeatable. Allowed modes are `syntax`, `semantic`, `policy`, `source-conformance` and `visual`. When no `--mode` is supplied, `review` runs the deterministic `syntax`, `semantic` and `policy` modes. `source-conformance` requires at least one `--source` and an installed AI adapter. `visual` requires `--svg` and an installed visual-review adapter. Review reports findings and MUST NOT modify source files. Error-level syntax, semantic, source-conformance or visual findings return code 1; an error-level policy finding returns code 5. Warnings alone return 0. Invalid option combinations return 2 and a missing requested adapter returns 3.
+
+The post-MVP layout comparison command has this provisional contract:
+
+```text
+flowframe compare-layouts --model MODEL --view VIEW [--config CONFIG]
+  --layout ENGINE --layout ENGINE [--output-dir build/layouts/]
+```
+
+It validates and compiles the model/view once, then renders the same generated D2 with each explicitly named installed engine. It MUST NOT silently substitute an engine. Results are written below `<output-dir>/<engine>/`. The command requires at least two distinct engines and remains post-MVP while ELK is the only required engine. Fewer than two distinct engines is usage error 2; an unavailable engine returns 3; any engine render failure returns 4 and prevents a successful comparison result.
 
 ### 17.1. Exit codes
 
@@ -1183,6 +1205,7 @@ Commands that consume a System Model and View Specification MUST accept `--confi
 3  missing external dependency
 4  renderer failure or timeout
 5  policy or security violation
+6  unexpected internal failure
 ```
 
 ### 17.2. Build output
@@ -1319,44 +1342,40 @@ flowframe/
 │
 ├── src/flowframe/
 │   ├── cli.py
-│   ├── model.py
+│   ├── api.py
+│   ├── diagnostics.py
+│   ├── errors.py
+│   ├── project/
+│   ├── contracts/
+│   ├── domain/
 │   ├── validation/
+│   ├── selection/
 │   ├── projection/
-│   ├── generators/
+│   ├── ir/
+│   ├── generation/
 │   ├── rendering/
-│   ├── resources/
-│   │   └── themes/
-│   │       └── flowframe-light/
-│   │           ├── theme.yaml
-│   │           ├── assets/
-│   │           └── LICENSES.md
-│   └── diagnostics.py
-│
-├── schema/
-│   ├── flowframe-config.schema.json
-│   ├── system-model.schema.json
-│   ├── view.schema.json
-│   ├── flowframe-theme.schema.json
-│   └── flowframe-manifest.schema.json
-│
-├── lib/
-│   ├── theme.d2
-│   ├── components.d2
-│   ├── connections.d2
-│   └── boundaries.d2
-│
-├── icons/
-│   ├── LICENSES.md
-│   ├── generic/
-│   ├── azure/
-│   ├── aws/
-│   ├── kubernetes/
-│   └── security/
-│
-├── templates/
-│   ├── architecture/
-│   ├── flow/
-│   └── sequence/
+│   ├── presentation/
+│   ├── manifest/
+│   └── resources/
+│       ├── schemas/
+│       │   ├── flowframe-config.schema.json
+│       │   ├── system-model.schema.json
+│       │   ├── view.schema.json
+│       │   ├── flowframe-theme.schema.json
+│       │   └── flowframe-manifest.schema.json
+│       ├── themes/
+│       │   └── flowframe-light/
+│       │       ├── theme.yaml
+│       │       ├── assets/
+│       │       └── LICENSES.md
+│       ├── d2/
+│       │   ├── theme.d2
+│       │   ├── components.d2
+│       │   ├── connections.d2
+│       │   └── boundaries.d2
+│       └── icons/
+│           ├── LICENSES.md
+│           └── generic/
 │
 ├── rules/
 │   ├── visual-guidelines.md
@@ -1384,7 +1403,7 @@ flowframe/
     └── install-pinned-d2.sh
 ```
 
-The tree above is the FlowFrame implementation repository. In a consumer repository, custom themes live under `<project-root>/themes/<theme-id>/`, where `project-root` is resolved from `flowframe.yaml` as defined in section 13.2. Built-in themes are installed only as package resources.
+The tree above is the high-level FlowFrame implementation repository; the detailed package layout in `technical-spec.md` section 5 is canonical for implementation. In a consumer repository, custom themes live under `<project-root>/themes/<theme-id>/`, where `project-root` is resolved from `flowframe.yaml` as defined in section 13.2. Built-in themes are installed only as package resources.
 
 ---
 
@@ -1400,7 +1419,9 @@ Scope:
 - pin and verify a D2 version,
 - compare ELK and TALA on representative diagrams,
 - verify sequence-diagram support,
+- verify that the selected pinned D2 version provides `d2 validate` with stable exit behavior,
 - verify offline icon and font bundling,
+- decide between accessible SVG `<text>` with pinned/embedded fonts and conversion to paths, documenting portability, size, searchability and accessibility consequences,
 - verify deterministic top/bottom decoration-band composition, footer templates and embedded local logo rendering with ELK,
 - validate the proposed SVG sanitizer profile against representative logos using gradients, clipping, masks and bounded filters,
 - document TALA licensing and installation constraints,
@@ -1593,9 +1614,11 @@ The following decisions must be resolved during Stage 0 or Stage 1:
 7. Exact policy for displaying technology names and protocols.
 8. AI evaluation threshold and representative prompt corpus.
 9. Performance budget for small and medium diagrams.
-10. Whether v0.1 needs a dark theme or only the light baseline.
+10. SVG text portability policy: accessible `<text>` with pinned/embedded fonts versus conversion to paths.
 11. Supported custom font formats and embedding policy.
 12. Numeric implementation-wide logo limits for source bytes, dimensions, element count, nesting and filter regions; these are security caps distinct from per-asset display bounds.
+
+Dark theme support is not an open v0.1 decision: it remains post-MVP as defined in section 3.2.
 
 ---
 

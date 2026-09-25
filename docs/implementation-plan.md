@@ -114,6 +114,7 @@ Acceptance:
 
 - all three fixtures render offline,
 - the chosen executable can be checksum-verified,
+- the selected version provides `d2 validate` with documented exit behavior,
 - the wrapper can distinguish validation failure, renderer failure and timeout,
 - version/flag data needed for the manifest is obtainable or its absence is explicitly modeled.
 
@@ -125,6 +126,7 @@ Tasks:
 - compare D2 bytes, raw SVG and normalized SVG,
 - inventory nondeterministic SVG fields and ordering,
 - exercise long labels, Unicode, nested containers and both relation directions,
+- compare text layout and appearance in every supported documentation consumer,
 - confirm sequence output has sufficient stable hooks for later composition,
 - define the minimum SVG normalization behavior without changing painter order,
 - record baseline visual snapshots.
@@ -154,6 +156,8 @@ Create one body SVG and exercise:
 Tasks:
 
 - compare candidate deterministic text-measurement strategies,
+- compare output-wide accessible `<text>` with pinned/embedded fonts against deterministic text-to-path conversion,
+- test the chosen strategy on both D2 body text and FlowFrame decoration text,
 - test bundled fonts without host font discovery,
 - derive top/bottom band and width expansion calculations,
 - verify that translating the body preserves internal geometry,
@@ -161,7 +165,8 @@ Tasks:
 
 Acceptance:
 
-- an ADR selects the measurement method and supported font formats,
+- an ADR selects the output-wide text representation, measurement method and supported font formats,
+- the ADR records portability, output-size, searchability and accessibility consequences; path conversion is rejected unless per-object accessible text and a textual summary preserve the baseline,
 - the band algorithm never clips or overlays the body in the fixture set,
 - decoration placement is deterministic without browser automation,
 - the same algorithm works on SVG emitted for every MVP family.
@@ -210,7 +215,8 @@ Decide and record:
 - icon set and license,
 - initial numeric input/process limits,
 - baseline performance budgets,
-- scope of v0.1 custom fonts.
+- scope of v0.1 custom fonts,
+- technology-name and protocol display policy for every detail level.
 
 ### P0 exit gate
 
@@ -839,6 +845,7 @@ Tasks:
 
 - automate contrast checks where geometry permits,
 - generate grayscale snapshots,
+- verify the selected text representation in every supported consumer, including equivalent accessibility metadata when text is converted to paths,
 - assert semantic distinctions do not rely only on color,
 - conduct human review of the full corpus,
 - record accepted renderer quirks,
@@ -849,7 +856,7 @@ Tasks:
 Tasks:
 
 - test every command help page,
-- test exit codes 0–5,
+- test exit codes 0–6, including a synthetic unexpected exception returning code 6,
 - test text and JSON diagnostics,
 - provide concise success output,
 - hide stack traces outside debug mode,
@@ -926,6 +933,19 @@ Measure:
 - correct view family and selection.
 
 Set the v0.1 threshold from P0/P7 baseline before release acceptance.
+
+### P7.5 — Read-only review command
+
+Tasks:
+
+- implement the exact `flowframe review` signature from the PRD,
+- run syntax, semantic and policy modes without an AI dependency,
+- require explicit `--source` inputs for source-conformance review,
+- require an explicit `--svg` for visual review,
+- report a missing optional adapter as exit code 3,
+- map error findings and invalid option combinations to the PRD exit-code contract,
+- emit text or stable JSON findings,
+- prove that every review mode leaves model, view, configuration and artifacts unchanged.
 
 ### P7 exit gate
 
@@ -1006,6 +1026,7 @@ A new consumer repository can install FlowFrame, create a project-wide branded c
 These items do not block v0.1:
 
 - optional TALA adapter and comparison workflows,
+- `compare-layouts` implementation using identical compiled D2, two or more explicitly selected engines and no fallback,
 - dark built-in theme,
 - additional architecture and flow subtypes,
 - vendor icon packs with independent licenses,
