@@ -4,7 +4,7 @@
 
 FlowFrame separates system facts, view intent and visual rendering. Humans or AI describe what a system contains and which view is required; a deterministic compiler validates those inputs, generates D2 and renders an SVG using a framework-owned design system.
 
-> FlowFrame is currently at the specification stage. The authoritative product and technical specification is [docs/prd.md](docs/prd.md).
+> FlowFrame is currently at the specification stage. Start with the authoritative [product requirements](docs/prd.md), then use the [technical design](docs/technical-spec.md) and [implementation plan](docs/implementation-plan.md) for execution.
 
 ---
 

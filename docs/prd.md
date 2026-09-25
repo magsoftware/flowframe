@@ -960,6 +960,7 @@ rules/
 ├── naming-rules.md
 ├── diagram-types.md
 ├── accessibility-rules.md
+├── svg-logo-profile-v1.md
 └── ai-generation-rules.md
 ```
 
@@ -1015,11 +1016,12 @@ Validation is part of the first vertical slice, not a late implementation phase.
 - valid selection fields and traversal limits,
 - compatibility of layout options with the selected engine,
 - valid Project Configuration, theme ID, theme version and brand asset references,
-- supported decoration positions and footer template placeholders,
+- supported decoration positions, mutually exclusive slots and footer-template grammar,
 - presentation text length and plain-text requirements,
 - no per-view visual overrides or raw visual styles in System Models and View Specifications,
 - Theme/Brand Pack token values and semantic mappings conform to the theme schema,
 - no disallowed remote assets,
+- logo sanitizer-profile compliance and asset bounds below global security limits,
 - no empty mandatory labels.
 
 ### 15.3. Diagnostics
@@ -1064,7 +1066,17 @@ Warnings MUST NOT change generated semantics automatically.
     "layoutEngineVersion": "...",
     "flags": []
   },
-  "theme": { "id": "company-light", "version": "1", "sha256": "..." },
+  "theme": { "id": "company-light", "version": "1", "origin": "project", "sha256": "..." },
+  "assetProcessing": {
+    "svgSanitizer": {
+      "profile": "flowframe-svg-logo/v1",
+      "implementation": "...",
+      "version": "..."
+    },
+    "assets": [
+      { "id": "company-logo", "inputSha256": "...", "sanitizedSha256": "..." }
+    ]
+  },
   "outputs": {
     "d2": { "path": "diagram.d2", "sha256": "..." },
     "svg": { "path": "diagram.svg", "sha256": "..." }
@@ -1107,6 +1119,42 @@ The implementation MUST define and test:
 - D2 execution MUST have a timeout and a bounded output size.
 - CI SHOULD run rendering in an isolated environment.
 - Untrusted source documentation supplied to AI MUST be treated as data, not as executable instructions.
+
+### 16.5. Logo SVG sanitizer profile
+
+Logo sanitization MUST use the versioned `flowframe-svg-logo/v1` profile. The implementation MUST maintain an element-and-attribute allowlist and reject, rather than silently strip, unsupported content.
+
+The exact per-element attribute and CSS-property matrix is normative and MUST be published in `rules/svg-logo-profile-v1.md`. At minimum it covers:
+
+- geometry and coordinate attributes required by the allowed vector elements,
+- safe paint attributes including fill, stroke, opacity, line and fill rules,
+- transform, gradient, clipping, masking and bounded-filter attributes,
+- fragment-only `href`, `url(#id)`, `id` and `class` references,
+- accessibility metadata and XML namespace attributes,
+- a CSS property allowlist equivalent to the permitted presentation attributes.
+
+The v1 profile MUST support:
+
+- vector structure and geometry: `svg`, `g`, `defs`, `title`, `desc`, `path`, `rect`, `circle`, `ellipse`, `line`, `polyline` and `polygon`,
+- paint servers: `linearGradient`, `radialGradient` and `stop`,
+- clipping and masking: `clipPath` and `mask`,
+- internal reuse through `use` and fragment-only `href="#id"`,
+- internal `url(#id)` references for gradients, clipping, masks and filters,
+- a bounded filter subset: `filter`, `feBlend`, `feColorMatrix`, `feComposite`, `feDropShadow`, `feFlood`, `feGaussianBlur`, `feMerge`, `feMergeNode` and `feOffset`,
+- safe presentation attributes and inline style properties required by those features.
+
+The v1 profile MUST reject:
+
+- `script`, `foreignObject`, embedded HTML, frames, audio, video and animation elements,
+- event-handler attributes such as `onload` or `onclick`,
+- external URLs, network references, non-fragment `href`, CSS `@import` and external `url(...)`,
+- embedded raster images and executable or active content,
+- unknown elements, attributes, CSS rules or filter primitives,
+- assets exceeding global byte-size, dimension, element-count, nesting or filter-region limits.
+
+A `<style>` element MAY be accepted only when parsed by a real CSS parser against a property allowlist; regular-expression-only CSS sanitization is forbidden. Otherwise authors must convert styles to permitted presentation attributes. Rejected assets produce an actionable diagnostic and are never rendered in partially sanitized form.
+
+For identical input bytes, sanitizer profile, implementation and version, sanitized output MUST be byte-identical after canonical namespace and attribute ordering plus deterministic ID rewriting and reference normalization. The manifest records the profile, implementation version and input/output SHA-256 for every processed brand asset.
 
 ---
 
@@ -1276,20 +1324,20 @@ flowframe/
 │   ├── projection/
 │   ├── generators/
 │   ├── rendering/
+│   ├── resources/
+│   │   └── themes/
+│   │       └── flowframe-light/
+│   │           ├── theme.yaml
+│   │           ├── assets/
+│   │           └── LICENSES.md
 │   └── diagnostics.py
 │
 ├── schema/
 │   ├── flowframe-config.schema.json
 │   ├── system-model.schema.json
 │   ├── view.schema.json
-│   ├── theme.schema.json
-│   └── manifest.schema.json
-│
-├── themes/
-│   └── flowframe-light/
-│       ├── theme.yaml
-│       ├── assets/
-│       └── LICENSES.md
+│   ├── flowframe-theme.schema.json
+│   └── flowframe-manifest.schema.json
 │
 ├── lib/
 │   ├── theme.d2
@@ -1316,6 +1364,7 @@ flowframe/
 │   ├── naming-rules.md
 │   ├── diagram-types.md
 │   ├── accessibility-rules.md
+│   ├── svg-logo-profile-v1.md
 │   └── ai-generation-rules.md
 │
 ├── prompts/
@@ -1335,6 +1384,8 @@ flowframe/
     └── install-pinned-d2.sh
 ```
 
+The tree above is the FlowFrame implementation repository. In a consumer repository, custom themes live under `<project-root>/themes/<theme-id>/`, where `project-root` is resolved from `flowframe.yaml` as defined in section 13.2. Built-in themes are installed only as package resources.
+
 ---
 
 ## 21. Implementation plan
@@ -1350,7 +1401,8 @@ Scope:
 - compare ELK and TALA on representative diagrams,
 - verify sequence-diagram support,
 - verify offline icon and font bundling,
-- verify title, footer and embedded local logo rendering with ELK,
+- verify deterministic top/bottom decoration-band composition, footer templates and embedded local logo rendering with ELK,
+- validate the proposed SVG sanitizer profile against representative logos using gradients, clipping, masks and bounded filters,
 - document TALA licensing and installation constraints,
 - confirm SVG behavior in target documentation systems.
 
@@ -1395,6 +1447,7 @@ Scope:
 - built-in Theme/Brand Pack and one custom brand fixture,
 - component, boundary and connection classes,
 - title, subtitle, footer and logo decoration classes,
+- versioned deterministic SVG logo sanitizer and canonicalizer,
 - generic icon set and license metadata,
 - accessibility rules,
 - grayscale and contrast tests,
@@ -1458,7 +1511,7 @@ FlowFrame v0.1 is accepted when all of the following are true:
 9. SVG snapshots show no clipped labels, overlapping nodes or decorations obscuring diagram content in the golden corpus.
 10. Diagram meaning remains understandable in grayscale.
 11. Text and essential strokes meet the selected WCAG AA contrast targets.
-12. The manifest records configuration, theme and input hashes together with all renderer versions and options needed to reproduce the build.
+12. The manifest records configuration, theme and input hashes together with renderer and sanitizer profiles, versions and options needed to reproduce the build.
 13. Renderer failures and timeouts return documented non-zero exit codes and do not report success based on partial output files.
 14. The AI evaluation corpus reaches an agreed schema-validity threshold and does not introduce raw styling fields.
 15. One documented command builds every example from source.
@@ -1481,6 +1534,8 @@ The exact AI quality threshold and render-performance budget MUST be set after S
 - accessibility checks,
 - global-theme consistency tests across multiple views,
 - title, subtitle, footer and logo snapshot tests,
+- footer-template tests covering static text, `{source}`, escaped braces and invalid placeholders,
+- sanitizer allowlist, rejection, complexity-limit and deterministic-output tests,
 - CLI exit-code tests,
 - security tests for unsafe YAML, path traversal, unsafe SVG brand assets and remote assets,
 - AI evaluations separated from deterministic core tests.
@@ -1515,6 +1570,8 @@ Human visual review remains part of release approval until reliable automated la
 | Overloaded semantic vocabulary | inconsistent diagrams | orthogonal fields and documented enums |
 | Remote icons break offline builds | non-reproducible output | local approved assets, remote resources disabled |
 | Unsafe or unlicensed brand assets | security or legal exposure | validated local assets, SVG sanitization, mandatory license metadata |
+| Sanitizer changes alter embedded logos | non-reproducible output | versioned profile, pinned implementation, canonical output and manifest hashes |
+| Decorations overlap diagram content | unreadable diagrams | measured canvas bands, slot-conflict validation and visual snapshots |
 | Per-view branding drifts from project identity | inconsistent documentation | one project configuration; reject per-view visual overrides |
 | D2 classes are overridden | inconsistent styling | generated D2 only, linting, no style fields in source schemas |
 | Automatic review changes semantics | architecture corruption | immutable System Model during layout improvement, visible diff |
@@ -1538,7 +1595,7 @@ The following decisions must be resolved during Stage 0 or Stage 1:
 9. Performance budget for small and medium diagrams.
 10. Whether v0.1 needs a dark theme or only the light baseline.
 11. Supported custom font formats and embedding policy.
-12. Maximum logo dimensions and SVG asset size limits.
+12. Numeric implementation-wide logo limits for source bytes, dimensions, element count, nesting and filter regions; these are security caps distinct from per-asset display bounds.
 
 ---
 
