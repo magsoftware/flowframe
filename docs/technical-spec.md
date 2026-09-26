@@ -52,7 +52,7 @@ The v0.1 implementation does not provide a GUI, manual placement, arbitrary per-
 | Tests | `pytest` | Unit, contract, integration, golden, snapshot and security suites. |
 | Static quality | Ruff and mypy | Formatting/linting and strict checks for the core packages. |
 
-Dependency versions MUST be locked for releases. D2 itself MUST be installed at the version selected by the Stage 0 ADR and verified by checksum. Resolve `FLOWFRAME_D2` (explicit absolute executable path) before PATH and verify the chosen executable's version and SHA-256 against the packaged platform-specific pin on every rendering invocation. Wrong or missing binaries return dependency error 3. This applies to all builds, without a special reproducible/CI mode.
+Dependency versions MUST be locked for releases. D2 itself MUST be installed at the version selected by the Stage 0 ADR and verified by checksum. Resolve `FLOWFRAME_D2` (explicit absolute executable path) before PATH and verify the chosen executable's version and SHA-256 against the packaged platform-specific pin on every rendering invocation. Only official release executables matching the packaged per-platform pin are supported; distribution rebuilds with different bytes are not. A pinned installer helper MUST obtain and verify the approved release artifact explicitly, with an offline installation path. Builds MUST NOT download D2 automatically. Missing executable, version mismatch and checksum mismatch have distinct dependency diagnostics, all returning 3 with installation guidance. Updating the accepted pin requires a FlowFrame release. This applies to all builds, without a special reproducible/CI mode.
 
 ### 3.1. Supported platforms
 
@@ -199,6 +199,8 @@ Resolution is deterministic:
 3. If none exists, use the System Model directory as the effective root and create the versioned built-in configuration in memory.
 4. Resolve all project-relative paths against that root, never against the process working directory.
 
+With no configuration the model directory is the project root. An out-of-root View diagnostic MUST suggest placing `flowframe.yaml` in the common ancestor of model and View and, if necessary, passing `--config`; sibling `model/` and `views/` directories are supported with that explicit common root.
+
 The resolver MUST canonicalize paths, reject traversal outside the project root for project-owned assets and retain both a logical relative path and a resolved filesystem path. Symlinks that escape the project root MUST be rejected for themes and assets.
 
 ### 6.3. Theme resolution
@@ -272,7 +274,7 @@ IDs use the PRD §8.3 grammar and one namespace for the system, boundaries, elem
 
 For an undirected relation, `source` and `target` remain mandatory. Directionality affects arrowheads and eligible labels only; it does not change the storage model.
 
-Relation endpoints and all scenario participants reference elements, never boundaries. Scenario `relationId`, protocol inheritance and participant permutations follow PRD §§9.4 and 10.5. Parents reference only boundaries/system; omitted parent means outside the system. Validate actor/external-system ancestry.
+Relation endpoints and all scenario participants reference elements, never boundaries. Scenario `relationId`, protocol inheritance and participant permutations follow PRD §§9.4 and 10.5. Parents reference only boundaries/system; omitted parent means outside the system, without kind-based inference. Validate actor/external-system ancestry. When systemBoundary is enabled but no selected element reaches the system through its parents, emit the PRD FFV warning and omit that empty boundary.
 
 View validation covers family/subtype, scenario existence, selection element/relation IDs, forbidden family fields, traversal bounds, empty results and layout compatibility. Relation combinations and display defaults are exactly PRD §§9.3.1 and 10.8, not inferred independently by projectors.
 
@@ -284,7 +286,7 @@ A diagnostic contains:
 severity: error | warning | info
 code: stable FlowFrame code
 message: concise human explanation
-category: validation | usage | dependency | rendering | policy | internal
+category: validation | usage | dependency | execution | policy | internal
 location: optional file + one-based line + column + JSON Pointer
 related: zero or more related locations
 hint: optional corrective action
@@ -327,8 +329,10 @@ Configuration defaults, family display fields and integration-flow defaults come
 Each projector maps the selection to one of three disjoint IRs:
 
 - Architecture IR: nodes, nested boundary groups, typed edges and portable layout hints.
-- Flow IR: selected nodes, directed/bidirectional semantic flows, labels, explicit payload and protocol metadata. Store annotations derive from kind; source/sink annotations derive only from selected degree, never from guessed business roles.
-- Sequence IR: ordered participants, messages (including self-messages) and notes; groups and activation spans are post-MVP.
+- Flow IR: selected nodes, directed/bidirectional semantic flows, labels, explicit payload and protocol metadata. A selected undirected dependency is an FFV error, not a warning or omitted edge. Store annotations derive from kind; source/sink annotations derive only from selected degree, never from guessed business roles.
+- Sequence IR: ordered participants, messages (including self-messages) and notes; groups and activation spans are post-MVP. Messages use a solid line and one from-to arrowhead without timing semantics; responses are separate reverse messages and relationId does not import relation appearance. Optional legends explain only message/note/numbering constructs.
+
+Deprecated elements retain their `[deprecated]` text marker in labels and accessible descriptions in every family. Architecture/flow `display.relationLabels` hides only user labels; mandatory semantic labels remain visible.
 
 A projector MUST NOT emit D2 text or inspect theme colors. It MAY assign semantic roles such as `external`, `database` or `async` that the generator resolves through the global theme.
 
@@ -348,7 +352,7 @@ Every IR constructor enforces:
 
 The D2 generator is a programmatic typed writer, not an unrestricted text-template engine. It MUST:
 
-- write a generated-file header with FlowFrame version and resolved theme fingerprint,
+- write a generated-file header with FlowFrame version and resolved theme fingerprint equal to the manifest's `theme.sha256`, computed by the same aggregate algorithm (not a D2 content hash or authenticity token),
 - emit only constructs owned by the relevant family generator,
 - escape IDs, labels and string values in one audited module,
 - serialize properties in a fixed order,
@@ -362,7 +366,7 @@ Raw D2 snippets from YAML are forbidden. Unknown tokens, kinds or semantics are 
 
 Generated identifiers MUST prefix source IDs in a reserved internal namespace and escape all D2 syntax. D2 keywords remain valid source IDs; source-to-generated mapping is injective. Derived IDs use separate namespaces and stable semantic identity, never random UUIDs or Python hashes.
 
-Generated D2 is self-contained: classes are materialized from resolved theme tokens/mappings and internal templates, with approved generic icons embedded as sanitized bounded SVG data URIs. There are no output imports, remote URLs or filesystem asset paths. The v0.1 generic index maps kinds, not free-text technologies, to assets with hashes/licenses.
+Generated D2 is self-contained: classes are materialized from resolved theme tokens/mappings and internal templates, with approved generic icons embedded as sanitized bounded SVG data URIs. There are no output imports, remote URLs or filesystem asset paths. The v0.1 generic index maps kinds, not free-text technologies, to assets with hashes/licenses. Deduplicate embedded URI declarations by sanitized asset SHA-256, using reusable classes/declarations so each unique asset appears once in D2 regardless of node count. An explicit null entry is a silent semantic-shape fallback; missing entries or missing declared files are invalid-pack errors. P0 verifies reuse with the pinned D2, including interactions with per-kind styling.
 
 Required D2 lint rules reject missing/invalid generated headers, imports, absolute or relative filesystem references, remote URLs, raw source-injected constructs, markdown/HTML labels, and unapproved data URIs. Only compiler-produced bounded SVG icon URIs with validated vector content are allowed. The lint validates content, not just a trusted-looking header.
 
@@ -387,18 +391,25 @@ Potentially influential `D2_*` environment variables MUST be cleared unless expl
 
 The wrapper MUST record the verified executable SHA-256, reported D2 version, layout engine and version if exposed, arguments and normalized failure details. A timeout or non-zero exit is an error even if a partial SVG exists. Partial outputs MUST be removed or left only in a diagnostic temporary directory, never published as successful artifacts.
 
-`d2 validate` is the intended syntax boundary for render/build. Stage 0 MUST verify the pinned release's command and exits and retain local version-specific observations in its ADR. `d2 fmt --check` is not a substitute. Compile does not invoke D2.
+`d2 validate` is the intended syntax boundary for render/build. Stage 0 MUST verify the pinned release's command and exits and retain local version-specific observations in its ADR. `d2 fmt --check` is not a substitute. Compile does not invoke D2. A syntax rejection for freshly generated build input is FFX/internal (6); rejection of a separately supplied render artifact is FFD/validation (1). Classify a crash/timeout as execution (4), not a syntax rejection, and retain bounded process evidence for diagnostics.
 
 ### 11.1. Artifact publication
 
-Individual compile/render outputs use a sibling temporary file and `os.replace` after successful verification. Complete builds use immutable sibling generation directories and one atomic symlink-pointer replacement on supported macOS/Linux filesystems:
+Individual compile/render outputs use a sibling temporary file and `os.replace` after successful verification. Complete builds publish to an ordinary dedicated output directory, without symlinks or generation history.
 
-1. Acquire an OS advisory lock for the logical per-view output path; fail with an actionable validation diagnostic if another writer holds it.
-2. Write D2/SVG and the manifest into a new same-filesystem generation directory, with the manifest written last. Verify all hashes and flush files before publication. Validate any existing pointer targets as FlowFrame-owned sibling generation directories; never follow an arbitrary output symlink for writes.
-3. Create a temporary relative symlink to that generation and atomically replace the logical output-directory symlink. On first build, create that pointer; an existing ordinary output directory is rejected with migration guidance rather than overwritten.
-4. Retain the prior generation for recovery; cleanup of old generations is explicit and outside the v0.1 build command.
+For target `<parent>/<name>`, private control state lives in `<parent>/.<name>.flowframe/`: one stable advisory-lock file, one staging directory, at most one previous-output directory and a small recovery journal. The installer/docs mark this control directory as untracked build state; it is not part of the three public artifacts. Staging and target MUST be on the same filesystem. Existing control state must have valid ownership records for this exact target; a name alone never authorizes recursive cleanup.
 
-Readers requiring a coherent multi-file snapshot MUST resolve the pointer once and read the resolved generation; opening multiple files via a moving pointer without pinning it is not a transactional read. Failure/SIGINT before pointer replacement leaves the old generation visible. The lock is released automatically on process exit; do not break locks by deleting a lock file. This provides per-view publication, not project-wide atomicity or guarantees against arbitrary storage hardware failure.
+1. Canonicalize the parent and target identity, reject an output symlink and acquire the per-target OS advisory lock. A competing writer fails immediately with a stable FFR execution diagnostic (4). Do not delete the lock file to break a held lock.
+2. Recover an interrupted prior publication before starting work. If the target is missing and the recorded intact backup exists, restore it. If the target contains the verified newly published set, recognize completion. Do not replace unrelated content encountered at the target or control paths; report the conflict and preserve the backup.
+3. Accept an absent target, an empty ordinary directory or a previous FlowFrame output whose manifest/schema, exact file inventory and output hashes validate. Reject unrelated files or modified artifacts with guidance to choose a dedicated directory. Never claim ownership from filenames alone.
+4. Prepare D2/SVG in the single staging directory, write the manifest last, verify the complete artifact set and flush it before publication. Failure here leaves the old target unchanged. Remove only staging state owned by this run.
+5. Before replacement, clean the older retained backup if it is verified as FlowFrame-owned; on cleanup failure stop before touching the current target. Persist recovery intent, rename the old target to the backup slot (if one exists), then rename staging to the target. Record completion. First publication needs only the second rename; an accepted empty target can occupy the temporary backup slot.
+6. On failure/SIGINT during replacement, attempt to restore the recorded backup when no new target was published. Report an unsuccessful rollback and the backup/recovery location explicitly. A crash is resolved by the same journal-aware recovery on the next invocation.
+7. Retain at most the current output, one previous output and one in-progress staging set. Automatically remove obsolete owned state under the lock; no unbounded accumulation or cleanup command is required. An empty backup can be removed after success.
+
+Two renames are not an atomic directory swap: readers may briefly see no target, and separate concurrent file opens have no snapshot guarantee. Consumers should read/copy/commit ordinary output files after a successful build, rather than reading through a publication in progress. Validation/render failure before publication preserves the old output; rollback after a publication failure is best effort, with explicit recovery status, not an unconditional durability promise. Output I/O, lock conflicts and failed recovery use execution category/code 4; unsafe path redirection remains policy/code 5.
+
+P0 tests rename failure, crash windows and ownership checks on supported filesystems. P3 implements this bounded state machine; no optional symlink mode, content-addressed generations, exported copies or whole-project transaction is in scope.
 
 ---
 
@@ -491,6 +502,8 @@ A Theme/Brand Pack is loaded as one immutable resolved object:
 - declared brand assets,
 - licenses.
 
+The source theme requires color tokens but may omit numeric decoration tokens; fill their PRD defaults to create the resolved theme. Omitted typography resolves to the built-in font set. Explicit typography is a closed exclusive union of `fontSet` and `fonts`, with custom faces nested under `typography.fonts`; neither an empty object nor both variants are valid.
+
 Raw RGB or HEX values are permitted only in `theme.yaml`. Project configuration references an asset ID, not a file path. The resolver confirms that all referenced files are declared, remain below the global byte cap and have an accepted media type.
 
 Per-asset `maxWidth` and `maxHeight` are layout bounds in CSS pixels. They are not security controls. Separate implementation-wide limits cap source bytes, intrinsic dimensions, element count, nesting depth, path complexity and filter regions.
@@ -567,14 +580,14 @@ The exact signatures, defaults, category-to-exit mapping and precedence are defi
 - `validate` supports model-only, model+view and exclusive theme-only forms; it never invokes D2.
 - `compile` validates and emits self-contained D2 only. It requires no D2 executable.
 - `render` verifies the generated header, theme fingerprint and full D2 lint, then runs D2 validation/rendering. It emits body SVG only. An explicit config is used for custom fonts/theme; without it only built-in configuration is used.
-- `build` composes the complete branded diagram, adds accessible summary/legend and publishes one generation. `--layout` overrides `render.layoutEngine`; only ELK is accepted in v0.1 and no fallback exists.
-- `build --all` uses the explicit project `views` registry and a single supplied model, validates IDs/paths before rendering, sorts by View ID and publishes independently to `DIR/<view-id>/`. It stops on failure and reports already published views.
-- `review` provides read-only syntax/semantic/policy modes without D2/AI. P7 source-conformance uses explicitly supplied sources and an optional adapter; visual review is post-MVP.
+- `build` composes the complete branded diagram, adds accessible summary/legend and publishes one complete artifact set using recoverable ordinary-directory replacement. `--layout` overrides `render.layoutEngine`; only ELK is accepted in v0.1 and no fallback exists.
+- `build --all` uses the explicit project `views` registry and a single supplied model, validates IDs/paths before rendering, sorts by View ID and publishes independently to `DIR/<view-id>/` using section 11.1 (no concurrent-reader atomicity). It stops on failure and reports already published views.
+- `review` selects stages of the same validation service as `validate`, without duplicate rules or D2/AI. Default modes produce the same findings/status as model+view validate. P7 source-conformance uses explicitly supplied sources and an optional adapter; visual review is post-MVP.
 - `compare-layouts` remains post-MVP, compiling once and rendering with at least two explicitly selected engines without fallback.
 
 All processing commands support `--format text|json` and `--debug`. JSON diagnostics are one array on stderr; optional redacted debug objects are contained within diagnostic entries, never emitted as extra text. No implicit warning promotion is implemented.
 
-Exit codes are 0 success, 1 validation, 2 usage, 3 dependency, 4 render/timeout, 5 policy, 6 internal and 130 SIGINT. Each diagnostic has a category independent of its prefix; observed-error precedence is 6 > 5 > 4 > 3 > 2 > 1. Cancellation returns 130 after cleanup. Unknown source properties are ordinarily validation errors, but known forbidden styling fields and unsafe resources are policy errors. Unexpected exceptions use FFX and never masquerade as invalid user input.
+Exit codes are 0 success, 1 validation, 2 usage, 3 dependency, 4 execution (renderer/timeout/output I/O/lock/publication), 5 policy, 6 internal and 130 SIGINT. Each diagnostic has a category independent of its prefix; observed-error precedence is 6 > 5 > 4 > 3 > 2 > 1. Cancellation returns 130 after cleanup. Unknown source properties are ordinarily validation errors, but known forbidden styling fields and unsafe resources are policy errors. Unexpected exceptions use FFX and never masquerade as invalid user input.
 
 ---
 
@@ -607,7 +620,7 @@ All YAML, theme and SVG files are untrusted input. Required controls include:
 - process timeout and output limits,
 - hardened XML parsing,
 - fail-closed SVG/CSS/filter allowlists,
-- transactional publication of artifacts,
+- staged, locked artifact publication with bounded backup and explicit recovery,
 - no secret values or absolute paths in normal diagnostics and manifests.
 
 CI SHOULD run the renderer with a read-only source tree, a writable isolated build directory, no network and a constrained process identity.
@@ -634,7 +647,7 @@ CI SHOULD run the renderer with a read-only source tree, a writable isolated bui
 - offline rendering,
 - timeout and renderer-error behavior,
 - project versus built-in theme resolution,
-- transactional output behavior,
+- recoverable output replacement, bounded retention and crash/lock/cleanup behavior,
 - deterministic repeated builds,
 - global branding consistency across every family,
 - decoration sizing and slot-conflict cases.

@@ -196,7 +196,7 @@ The framework MUST NOT silently switch layout engines based on a subjective asse
 
 v0.1 supports only `elk`: `render.layoutEngine` in Project Configuration defaults to `elk`; `build --layout` overrides it explicitly. Unknown or unsupported engines fail validation; missing installed dependencies return code 3. There is no fallback option in v0.1. Any post-MVP fallback requires a separate explicit contract and records both requested and effective engines.
 
-A separate comparison command MAY render the same view with all installed engines.
+The post-MVP comparison command MAY render the same view with two or more explicitly selected installed engines; it never selects all installed engines implicitly.
 
 ### 6.3. MVP implementation
 
@@ -383,7 +383,26 @@ scenarios:
 
 Elements, boundaries, relations, scenarios and the system MAY carry a plain-text `description` (maximum 2,000 Unicode code points after NFC normalization). Elements MAY declare `status: active | deprecated`, default `active`. A View MAY carry `purpose` under the same text limit. There is no generic priority or emphasis field in v0.1. AI assumptions are delivered in a separate human-readable report, never as undeclared YAML fields.
 
-`parentId` on an element or boundary references only a boundary or `system.id`; elements cannot be parents. Missing `parentId` means a root-level object outside the explicit system boundary. Boundaries may nest freely by kind, but cycles are invalid. `actor` and `external-system` MUST NOT have the system in their ancestor chain. Internal top-level boundaries SHOULD explicitly use `parentId: <system.id>`. `display.systemBoundary` controls visibility, not membership.
+`parentId` on an element or boundary references only a boundary or `system.id`; elements cannot be parents. Missing `parentId` means a root-level object outside the explicit system boundary. Boundaries may nest freely by kind, but cycles are invalid. `actor` and `external-system` MUST NOT have the system in their ancestor chain. Membership is explicit, not inferred from kind: an element or boundary intended to belong directly to the system MUST declare `parentId: <system.id>`; a nested member reaches the system through its ancestors. `display.systemBoundary` controls visibility, not membership. If it is true but no selected element belongs to the system, emit an FFV warning explaining the missing ancestry and omit the empty system boundary. Validation cannot infer an author's unstated intent.
+
+A model without intermediate boundaries still declares membership explicitly:
+
+```yaml
+schemaVersion: flowframe-model/v1
+system:
+  id: example-system
+  label: Example system
+elements:
+  - id: client
+    kind: external-system
+    label: External client
+  - id: api
+    kind: service
+    label: API
+    parentId: example-system
+```
+
+Here `client` is outside and `api` is inside the system. Model collection fields (`boundaries`, `elements`, `relations`, `scenarios`) default to empty lists when omitted; view/scenario validation still rejects empty required results.
 
 ---
 
@@ -504,7 +523,7 @@ The v0.1 scenario vocabulary is:
 | `message` | `id`, `from`, `to`, `label` | An ordered interaction between two participants. A self-message uses the same ID in `from` and `to`; it is not a separate kind. |
 | `note` | `id`, `participant`, `label` | An explanatory note attached to one participant at that point in the scenario. `participant` MUST reference an element ID; boundary IDs are invalid. |
 
-Message `from` and `to` MUST reference elements. Optional message fields are `protocol` (plain text, maximum 120 code points) and `relationId`. A referenced relation MUST connect those participants: directed relations must match forward order, bidirectional relations permit either order, and undirected relations cannot back a message. An explicit protocol must equal the referenced relation protocol when both exist; otherwise the relation protocol is inherited. No other relation property is silently copied into scenario timing or order. Notes have no protocol or relation reference.
+Message `from` and `to` MUST reference elements. Optional message fields are `protocol` (plain text, maximum 120 code points) and `relationId`. A referenced relation MUST connect those participants: directed relations must match forward order, bidirectional relations permit either order, and undirected relations cannot back a message. An explicit protocol must equal the referenced relation protocol when both exist; otherwise the relation protocol is inherited. No other relation property is silently copied into scenario timing, order or appearance. Notes have no protocol or relation reference. Every message has one solid line and a single arrowhead from `from` to `to`; in the sequence family this expresses an ordered message, not synchronous timing. A response is a separate reverse message with an explicit label, not an inferred return arrow. `relationId` does not change its style, even when the referenced relation is bidirectional or asynchronous. If enabled, the sequence legend explains only the message arrow, note and step numbering actually shown; it never invents timing semantics.
 
 Activation spans and grouped fragments such as `alt`, `loop` and `parallel` are post-MVP extensions and MUST NOT appear in a v0.1 source model.
 
@@ -653,7 +672,7 @@ An empty result is an FFV validation error. Disconnected selected components are
 | `layout.direction` | right | right | forbidden; order is defined by scenario/participants |
 | `display.boundaries` | all six boundary kinds | [] | forbidden |
 | `display.systemBoundary` | true | false | forbidden |
-| `display.relationLabels` | true | true | forbidden; message labels always visible |
+| `display.relationLabels` | true; optional user labels only | true; optional user labels only | forbidden; message labels always visible |
 | `display.protocols` | low: false; medium/high: true | low: false; medium/high: true | low: false; medium/high: true |
 | `display.technologies` | low: false; medium/high: true | low/medium: false; high: true | low/medium: false; high: true |
 | `display.payloads` | false | true | forbidden |
@@ -663,7 +682,7 @@ An empty result is an FFV validation error. Disconnected selected components are
 
 The table is the complete v0.1 display catalog. Explicit booleans override detail presets. Empty `display.boundaries` hides all boundary kinds. Detail does not filter relations or elements. Unknown family fields are errors.
 
-Integration-flow uses the same selection algorithm, defaults its relation semantics to all except `dependency` when `select.relations.semantics` is absent or empty, and requires directed or bidirectional selected relations. An explicit dependency filter is permitted only for directed/bidirectional dependencies. Its projection omits infrastructure boundaries by default, prioritizes payload/protocol labels and annotates stores (`database/cache/storage`) and processing/messaging nodes by semantic kind. Source/sink roles MAY be derived from selected graph degree as presentation annotations only; cycles need no artificial producer or consumer and no new business facts are inferred.
+Integration-flow uses the same selection algorithm, defaults its relation semantics to all except `dependency` when `select.relations.semantics` is absent or empty, and requires directed or bidirectional selected relations. An explicit dependency filter is permitted only for directed/bidirectional dependencies. If an undirected dependency survives the relation filters and has both endpoints selected, validation fails with an FFV diagnostic at the filter/relation and a hint to exclude that relation or use an architecture view. It MUST NOT be silently dropped or downgraded to a warning. An undirected dependency elsewhere in the model does not invalidate the flow view. Its projection omits infrastructure boundaries by default, prioritizes payload/protocol labels and annotates stores (`database/cache/storage`) and processing/messaging nodes by semantic kind. Source/sink roles MAY be derived from selected graph degree as presentation annotations only; cycles need no artificial producer or consumer and no new business facts are inferred.
 
 ---
 
@@ -796,7 +815,7 @@ The CLI MUST accept an explicit `--config` path. Without it, FlowFrame searches 
 
 Optional `views` is an explicit list of project-root-relative View file paths used by `build --all`; it defaults to `[]`. Paths must stay inside the project root and resolve to distinct files with distinct View IDs. All registered views use the model supplied to the command. There are no globs in v0.1.
 
-The project root is the directory containing the resolved `flowframe.yaml`. Project theme IDs resolve from `<project-root>/themes/<theme-id>/`. If no project configuration exists, the System Model directory is the effective project root and only built-in themes are considered. Built-in themes are immutable package resources shipped inside the installed FlowFrame distribution; they do not live in the project `themes/` directory. Built-in theme IDs are reserved: a project theme with a built-in ID is an error. Other IDs resolve only from the project theme directory. The theme's declared `id` MUST equal its directory name. The resolved configuration path or built-in ID and the resolved theme origin MUST be recorded in the manifest.
+The project root is the directory containing the resolved `flowframe.yaml`. A sibling `model/` and `views/` structure therefore needs a `flowframe.yaml` in their common parent (found by discovery or passed with `--config`). Without a config, the model directory is the root; a View outside it fails with an FFC diagnostic suggesting that common-parent configuration. Project theme IDs resolve from `<project-root>/themes/<theme-id>/`. If no project configuration exists, the System Model directory is the effective project root and only built-in themes are considered. Built-in themes are immutable package resources shipped inside the installed FlowFrame distribution; they do not live in the project `themes/` directory. Built-in theme IDs are reserved: a project theme with a built-in ID is an error. Other IDs resolve only from the project theme directory. The theme's declared `id` MUST equal its directory name. The resolved configuration path or built-in ID and the resolved theme origin MUST be recorded in the manifest.
 
 #### Built-in configuration `flowframe-default`, version 1
 
@@ -911,7 +930,18 @@ Raw RGB/HEX values are allowed only as token values in `theme.yaml`. Component s
 
 All color tokens listed below are required opaque `#RRGGBB` sRGB strings. `decoration-gap` and `decoration-padding-x` are numeric CSS pixels, default 16 and 24, bounded to 0–128. `decoration-text-max-width` is numeric CSS pixels, default 720, bounded to 240–1440. These three numeric fields are not colors.
 
-`typography` defaults to `{fontSet: flowframe-default}`, an immutable `resources/fonts/flowframe-default/` font set with pinned bytes and license. Custom typography instead requires `fonts: {regular: assets/fonts/regular.ttf, bold: assets/fonts/bold.ttf, italic: assets/fonts/italic.ttf, semibold: assets/fonts/semibold.ttf}`; all four local faces are required, with no host fallback. v0.1 custom fonts use TTF; P0 must verify D2 support, embedding licenses and the output-wide text policy before implementation. Font sizes are framework-owned in v0.1. `licenses` is required and references a local UTF-8 attribution/license inventory (normally `LICENSES.md`) covering fonts, logos and other assets; it is included in the aggregate hash.
+`typography` defaults to `{fontSet: flowframe-default}`, an immutable `resources/fonts/flowframe-default/` font set with pinned bytes and license. When supplied, `typography` MUST contain exactly one of `fontSet` or `fonts`; both together and an empty object are errors. The custom variant is `typography.fonts`, with all four local faces required and no host fallback:
+
+```yaml
+typography:
+  fonts:
+    regular: assets/fonts/regular.ttf
+    bold: assets/fonts/bold.ttf
+    italic: assets/fonts/italic.ttf
+    semibold: assets/fonts/semibold.ttf
+```
+
+v0.1 custom fonts use TTF; P0 must verify D2 support, embedding licenses and the output-wide text policy before implementation. Font sizes are framework-owned in v0.1. `licenses` is required and references a local UTF-8 attribution/license inventory (normally `LICENSES.md`) covering fonts, logos and other assets; it is included in the aggregate hash.
 
 | Mapping category | Source kinds/semantics | Required token |
 |---|---|---|
@@ -934,7 +964,7 @@ All color tokens listed below are required opaque `#RRGGBB` sRGB strings. `decor
 
 ### 13.4. Design tokens
 
-The theme MUST centrally define at least:
+The resolved theme MUST contain the following tokens. In the source `theme.yaml`, color tokens are required; the three numeric decoration tokens MAY be omitted and are filled with the defaults from section 13.3 before validation of the resolved theme and layout:
 
 ```text
 background
@@ -981,7 +1011,9 @@ Relations MUST be distinguishable using more than color. The mapping SHOULD use 
 - label prefix or text,
 - color.
 
-The exact non-color mapping belongs to the versioned framework, not the theme: synchronous relations use solid strokes, asynchronous relations dashed strokes, and not-applicable relations dotted strokes; directionality alone controls arrowheads (forward, both, none). Labels include the semantic name even when optional user labels are hidden; a legend explains the styles actually present. Encryption is expressed as text, never color alone. Themes control the mapped colors; line weights and arrowhead geometry are framework-owned in v0.1.
+For architecture and flow, the exact non-color mapping belongs to the versioned framework, not the theme: synchronous relations use solid strokes, asynchronous relations dashed strokes, and not-applicable relations dotted strokes; directionality alone controls arrowheads (forward, both, none). Labels include the semantic name even when `display.relationLabels: false` hides the optional user-supplied relation `label`; protocol, payload and encryption text are controlled independently by their own display flags. A legend explains the styles actually present. Encryption is expressed as text, never color alone. Themes control the mapped colors; line weights and arrowhead geometry are framework-owned in v0.1. Sequence message appearance follows section 9.4, not this interaction-to-pattern mapping.
+
+An element with `status: deprecated` always adds the literal text marker `[deprecated]` to its displayed label and accessible description in every family. It may also use a framework-owned visual distinction, but neither color nor a legend replaces the text marker.
 
 ### 13.6. Diagram decorations
 
@@ -1042,7 +1074,7 @@ Rules:
 - technology without an approved icon falls back to its semantic shape,
 - icon absence MUST NOT change component semantics.
 
-The MVP generic pack has a versioned `index.json` mapping each element kind to a local icon asset or explicit `null`, with SHA-256 and license references. Mapping is by semantic kind, never guessed from free-text `technology`. No source `icon` or `technologyId` field is introduced. The compiler embeds approved, sanitized icons as bounded SVG data URIs in generated D2; P0 must prove this path works offline with the pinned D2. Missing optional icons use the semantic shape and a warning; malformed or unsafe declared icons are errors.
+The MVP generic pack has a versioned `index.json` mapping each element kind to a local icon asset or explicit `null`, with SHA-256 and license references. Mapping is by semantic kind, never guessed from free-text `technology`. No source `icon` or `technologyId` field is introduced. The compiler embeds approved, sanitized icons as bounded SVG data URIs in generated D2, once per unique sanitized asset identity (SHA-256), using reusable declarations/classes rather than repeating the URI per node. P0 must prove this reuse works offline with the pinned D2. An explicit `null` means intentionally no icon and uses the semantic shape without a warning. A missing kind entry, a declared file that is absent, or malformed/unsafe content is an invalid pack and an error, not a silent fallback.
 
 ---
 
@@ -1274,13 +1306,13 @@ All commands except `version` accept `--format text|json` (default text) and `--
 
 `compile` runs source/asset/IR validation and policy lint, then emits one self-contained generated D2 file. It does not invoke D2 or emit a manifest. Classes are generated from the resolved theme; packaged `resources/d2` files are internal templates, not output imports.
 
-`render` is a low-level body-only operation: it requires the FlowFrame generated-file header and passes the complete D2 policy lint before `d2 validate` and rendering. A header is not proof of safety. Hand-authored D2 is unsupported. It emits one verified body SVG, with no project decorations or manifest. Optional explicit `--config` supplies the same theme/font environment used at compile time; without it only the built-in configuration is used and no upward discovery occurs. The generated header includes a deterministic theme fingerprint; a mismatch with the resolved render theme is an error. Therefore `compile + render` is not equivalent to `build`. This restriction avoids a hidden dependency on compiler working directories.
+`render` is a low-level body-only operation: it requires the FlowFrame generated-file header and passes the complete D2 policy lint before `d2 validate` and rendering. A header is not proof of safety. Hand-authored D2 is unsupported. It emits one verified body SVG, with no project decorations or manifest. Optional explicit `--config` supplies the same theme/font environment used at compile time; without it only the built-in configuration is used and no upward discovery occurs. The generated header includes a deterministic theme fingerprint, exactly the aggregate SHA-256 value recorded as `theme.sha256` in a build manifest (the same raw-byte hashing algorithm, even when compile emits no manifest). It is not a hash of D2 contents or an authenticity proof. A mismatch with the resolved render theme is an error. Therefore `compile + render` is not equivalent to `build`. This restriction avoids a hidden dependency on compiler working directories.
 
-`build` performs the complete pipeline, including `d2 validate`, decorations, accessibility summary, output verification and manifest publication. For a single `--view`, outputs are directly in DIR. `--all` requires a nonempty explicit config `views` list, validates all entries and writes each view to `DIR/<view-id>/` in sorted View-ID order. Both view options together, neither option, an empty registry or duplicate output IDs are errors. All entries share the supplied model, configuration and theme. Publication is atomic per view, not across the entire project; processing stops on failure and reports which views were published.
+`build` performs the complete pipeline, including `d2 validate`, decorations, accessibility summary, output verification and manifest publication. For a single `--view`, outputs are directly in DIR. `--all` requires a nonempty explicit config `views` list, validates all entries and writes each view to `DIR/<view-id>/` in sorted View-ID order. Both view options together, neither option, an empty registry or duplicate output IDs are errors. All entries share the supplied model, configuration and theme. Each view is prepared completely before publication to its ordinary output directory, using the recoverable replacement contract in section 17.2. Directory replacement is not atomic for concurrent readers, and the project is not one transaction; processing stops on failure and reports which views were published.
 
-D2 executable resolution uses `FLOWFRAME_D2` if set (an absolute executable path), otherwise the first `d2` on PATH. Every render invocation MUST verify version and SHA-256 against the packaged platform-specific pin; a mismatch or absence is dependency error 3. There is no separate reproducible mode: the same rule applies locally and in CI.
+D2 executable resolution uses `FLOWFRAME_D2` if set (an absolute executable path), otherwise the first `d2` on PATH. Every render invocation MUST verify version and SHA-256 against the packaged platform-specific pin; a mismatch or absence is dependency error 3. There is no separate reproducible mode: the same rule applies locally and in CI. Supported executables are the official release binaries accepted by the packaged per-platform pin. A distribution rebuild is unsupported unless its bytes match that pin; matching the version string alone is insufficient. FlowFrame MUST provide an explicit installer helper and offline installation instructions for the approved artifact, without downloading it implicitly during a build. Diagnostics distinguish executable missing, version mismatch and checksum mismatch and point to those instructions. Updating the approved D2 pin requires a FlowFrame release.
 
-`review` is read-only. MVP modes `syntax`, `semantic` and `policy` use deterministic validators without D2 or AI; syntax here means YAML/schema correctness, not rendering. `--mode` and `--source` are repeatable. Default modes are syntax, semantic and policy. Optional `source-conformance` requires at least one source and the P7 AI adapter. Missing requested adapter returns 3; invalid combinations return 2. Visual review and its future `--svg` option are post-MVP.
+`review` is read-only. MVP modes `syntax`, `semantic` and `policy` reuse the same validation pipeline, diagnostic codes and source-location handling as `validate`, without D2 or AI; they MUST NOT maintain a second implementation of those rules. The default review modes produce the same findings/status as `validate --model ... --view ...` for the same inputs. Explicit modes select validation stages while retaining prerequisite checks; syntax here means YAML/schema correctness, not rendering. `--mode` and `--source` are repeatable. Default modes are syntax, semantic and policy. Optional `source-conformance` requires at least one source and the P7 AI adapter. Missing requested adapter returns 3; invalid combinations return 2. Visual review and its future `--svg` option are post-MVP.
 
 The post-MVP layout comparison command has this provisional contract:
 
@@ -1298,7 +1330,7 @@ It validates and compiles the model/view once, then renders the same generated D
 1  validation or compilation error
 2  invalid command usage
 3  missing external dependency
-4  renderer failure or timeout
+4  execution failure: renderer, timeout, output I/O or publication conflict
 5  policy or security violation
 6  unexpected internal failure
 130 interrupted by SIGINT
@@ -1308,12 +1340,14 @@ Each error diagnostic carries one category; prefixes identify areas, not exit co
 
 | Category | Typical prefixes/cases | Exit |
 |---|---|---:|
-| validation | FFC/FFS/FFM/FFV/FFT/FFI/FFD: malformed source, bad references, invalid combination, D2 syntax rejection | 1 |
+| validation | FFC/FFS/FFM/FFV/FFT/FFI/FFD: malformed source, bad references, invalid combination, supplied D2 artifact rejected by standalone render | 1 |
 | usage | invalid CLI combinations or environment option syntax | 2 |
 | dependency | FFR: missing or wrong pinned renderer; missing requested adapter | 3 |
-| rendering | FFR: render process failure, timeout, invalid output geometry | 4 |
+| execution | FFR: render process failure, timeout, invalid output geometry, output I/O, occupied writer lock or failed publication/recovery | 4 |
 | policy | FFC/FFS/FFT/FFD/FFR: forbidden styling fields, remote resources, path escape, unsafe/over-budget input or SVG | 5 |
-| internal | FFX: unexpected implementation failure | 6 |
+| internal | FFX: unexpected implementation failure, including syntax rejection of D2 freshly generated within build | 6 |
+
+A syntax rejection from `d2 validate` inside build is FFX/internal (6), because FlowFrame just generated the input under its pinned toolchain. In standalone render, a supplied artifact can be corrupted or edited despite its header, so a syntax rejection is FFD/validation (1). Failure to execute D2 uses dependency (3), while a process crash or timeout uses execution (4). An occupied writer lock has its own stable FFR diagnostic and returns 4 immediately; it is not invalid model input.
 
 Known forbidden styling fields produce policy errors even if rejected by a closed schema; other unknown fields are ordinary validation errors. Structural schema checks may stop before dependent policy checks. Among errors actually observed, precedence is 6 > 5 > 4 > 3 > 2 > 1; usage errors normally terminate before processing. SIGINT terminates with 130 after cleanup. Warnings/info alone return 0. Never continue unsafe processing merely to discover a higher-priority error.
 
@@ -1326,7 +1360,11 @@ build/
 └── manifest.json
 ```
 
-The CLI MUST write diagnostics to stderr and MUST NOT infer success from the presence of an output file. It MUST check the D2 process exit status because D2 may leave a partial output after a rendering error. The logical per-view output directory is an atomically replaced symlink to an immutable sibling generation (technical-spec §11.1). Consumers reading all three files coherently resolve that pointer once. Existing ordinary directories are not overwritten implicitly; previous generations remain available for recovery.
+The CLI MUST write diagnostics to stderr and MUST NOT infer success from the presence of an output file. It MUST check the D2 process exit status because D2 may leave a partial output after a rendering error. The logical per-view output is an ordinary dedicated directory containing the three artifacts. Builds prepare and verify a complete staging directory before replacing the target under a writer lock (technical-spec §11.1). An existing empty directory is accepted; a previous FlowFrame output is replaceable only when its manifest and file inventory identify the expected intact artifact set. Unrelated files, modified artifacts or output symlinks are rejected with an actionable diagnostic and are not overwritten.
+
+Publication renames the previous output to a bounded backup, then staging to the target. This is recoverable replacement, not an atomic directory swap: readers can briefly observe a missing directory and concurrent multi-file reads have no snapshot guarantee. Documentation builds and copies for publication SHOULD consume outputs after a successful build finishes. A render/validation failure before publication leaves the old output unchanged. A publication failure attempts rollback; if rollback itself fails, the command reports the backup/recovery location and never claims the old output has been restored.
+
+Retain at most one previous output and one in-progress staging set per target; automatic recovery/cleanup on the next invocation, under the lock, removes only verified FlowFrame-owned state. There is no history of generations, content-addressed output naming, separate export command or symlink publication mode in v0.1. Final SVG/D2/manifest files can be linked, copied or committed directly; private staging/backup state is not part of the published artifacts.
 
 ---
 
@@ -1357,12 +1395,12 @@ The AI adapter MUST NOT:
 
 ### 18.2. Review modes
 
-Review MUST distinguish:
+Review distinguishes the following scopes; the deterministic syntax/semantic/policy modes and optional source-conformance are in v0.1:
 
 - **syntax review** — YAML and schema correctness (D2 validation belongs to render/build),
 - **semantic review** — internal consistency of the model,
 - **source-conformance review** — comparison with supplied source material,
-- **visual review** — readability of a rendered SVG/PNG,
+- **visual review (post-MVP)** — readability of a rendered SVG/PNG,
 - **policy review** — compliance with FlowFrame rules.
 
 Without source material, the reviewer cannot determine whether the documented architecture is factually correct.
@@ -1418,7 +1456,9 @@ Input:
 
 ```text
 Create an infrastructure view of:
-External client → Application Gateway → Kubernetes API → PostgreSQL over the Internet.
+External client → Internet → Application Gateway → Kubernetes API → PostgreSQL.
+The Internet labels the client's route to the gateway, not a traffic endpoint;
+the API-to-PostgreSQL connection is internal.
 The API uses Key Vault and Service Bus.
 Show network boundaries, protocols and security controls.
 ```
@@ -1522,7 +1562,7 @@ The MVP corpus SHOULD contain at least:
 - five sequence views,
 - small, medium and boundary-case diagrams,
 - nested boundaries,
-- missing optional icons,
+- intentionally absent icons (`null`) and invalid packs with missing declared assets,
 - long labels and Unicode labels,
 - a custom global theme with title, source footer and embedded logo,
 - views with omitted optional presentation fields,

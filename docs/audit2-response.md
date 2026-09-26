@@ -1,5 +1,7 @@
 # Rozstrzygnięcie audytu 2
 
+Uzupełnienie po kolejnej recenzji: poniższa tabela dokumentuje rozstrzygnięcia audytu 2. Rekomendacja B27 dotycząca symlinków/generacji została następnie wycofana: aktualny PRD §17.2 i specyfikacja §11.1 przewidują zwykły katalog wynikowy, ograniczony backup i odzyskiwanie po przerwaniu, bez obietnicy atomowej zamiany katalogów. Kolejna korekta doprecyzowuje również błędy D2/zajętej blokady, wygląd sequence, fingerprint theme, dystrybucję przypiętego D2 i współdzielenie walidatorów. W tych sprawach obowiązują aktualne dokumenty, nie historyczne propozycje z tabeli.
+
 Ocena uwag z [audyt2.md](../audyt2.md) względem dokumentów na commit `4469c74`. Poprawki dotyczą [PRD](prd.md), [specyfikacji technicznej](technical-spec.md), [planu implementacji](implementation-plan.md) i [README](../README.md). Oryginalny audyt pozostaje bez zmian.
 
 Audyt wykrywa rzeczywiste luki kontraktów i zależności. Nie zgadzam się jednak ze wszystkimi ocenami krytyczności ani z automatycznym przyjmowaniem proponowanych rozszerzeń. Wspólny identyfikator wersji nie uniemożliwia walidacji, gdy typ dokumentu wynika z argumentu CLI; podobny graf flow i infrastruktury nie jest sam w sobie błędem. Problemem są brakujące reguły, nie konieczność nadania diagramom odmiennej topologii. Propozycje poniżej ograniczają nowe mechanizmy do zakresu v0.1.

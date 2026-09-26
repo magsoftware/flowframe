@@ -116,7 +116,7 @@ Tasks:
 - compare D2 bytes, raw SVG and normalized SVG,
 - inventory nondeterministic SVG fields and ordering,
 - exercise long labels, Unicode, nested containers, all directionality values and mandatory self-messages/notes,
-- prove embedded generic SVG icon data URIs render offline,
+- prove embedded generic SVG icon data URIs render offline with one reusable declaration per unique sanitized asset, including multiple nodes/classes sharing it,
 - inventory D2 font data URIs and verify that plain labels produce no `foreignObject` (markdown labels are forbidden),
 - compare text layout and appearance in every supported documentation consumer,
 - confirm sequence output has sufficient stable hooks for later composition,
@@ -153,7 +153,7 @@ Tasks:
 - test the chosen strategy on both D2 body text and FlowFrame decoration text,
 - test bundled fonts without host font discovery,
 - derive top/bottom band and width expansion calculations,
-- test immutable generation publication and pointer-pinning readers on supported filesystems; document export/commit of resolved artifacts separately from the live build pointer,
+- test ordinary-directory replacement, both rename crash windows, writer locks and bounded backup/staging cleanup on supported filesystems; document the brief missing-target window and direct use of the final files,
 - verify that translating the body preserves internal geometry,
 - verify view-box and canvas behavior in target documentation renderers.
 
@@ -288,6 +288,7 @@ Fixtures cover:
 Tasks:
 
 - encode element, boundary, relation and scenario structures,
+- encode empty-list defaults for omitted model collections and the explicit membership example without intermediate boundaries,
 - encode the controlled vocabularies from the PRD,
 - require explicit IDs plus `source` and `target` for every relation, including bidirectional/undirected,
 - require semantic/interaction; encode optional payload, metadata and message protocol/relationId,
@@ -316,7 +317,8 @@ Theme schema includes:
 
 - `flowframe-theme/v1` metadata,
 - token definitions and semantic mappings,
-- typography and decoration tokens,
+- exclusive typography.fontSet/typography.fonts variants (omitted typography defaults, explicit empty/both variants fail),
+- required source color tokens and optional numeric decoration tokens resolved to PRD defaults,
 - declared assets with media type, alternative text, path and display bounds,
 - license metadata,
 - raw colors only in theme token values.
@@ -387,7 +389,8 @@ Acceptance:
 - process working directory does not change resolution,
 - two nested configs resolve to the nearest one,
 - absent config cannot access project theme directories,
-- the chosen config and theme origin are observable for manifest construction.
+- the chosen config and theme origin are observable for manifest construction,
+- sibling model/ and views/ directories without a common config produce guidance to add/pass that config, without broadening the root automatically.
 
 ### P2.3 — Domain object construction
 
@@ -431,7 +434,7 @@ Implement and test:
 - branding slot conflicts with FFC diagnostics (semantic, not schema fixture rejection),
 - footer grammar and escaped brace rules,
 - View family/subtype, scenarioId and participants, selection IDs and relation filters, traversal bounds, defaults and layout compatibility,
-- explicit system ancestry and forbidden actor/external-system membership,
+- explicit system ancestry and forbidden actor/external-system membership, with a no-boundaries example and warning when systemBoundary is enabled but no selected element belongs to the system,
 - PRD relation combination matrix, including event+synchronous warning.
 
 P2 owns structural/reference checks and path policy. Asset-content sanitization, measurable contrast and full custom presentation validation integrate in P4.
@@ -473,7 +476,7 @@ Tasks:
 
 ### Objective
 
-Produce `diagram.d2`, `diagram.svg` and `manifest.json` transactionally from one infrastructure view with the built-in theme and ELK.
+Produce `diagram.d2`, `diagram.svg` and `manifest.json` with staged, recoverable publication from one infrastructure view with the built-in theme and ELK.
 
 ### P3.1 — Deterministic selection engine
 
@@ -520,7 +523,7 @@ Tasks:
 - implement fixed property ordering and one-newline serialization,
 - emit generated-file header without volatile values,
 - map semantic roles through built-in theme tokens/classes and framework mappings,
-- materialize classes; emit no imports or host paths; include deterministic theme fingerprint in the header,
+- materialize classes; emit no imports or host paths; include the aggregate theme.sha256 as the deterministic header fingerprint,
 - implement the explicit D2 lint rule list in technical-spec §10,
 - emit nodes before relations,
 - prohibit raw D2 from source documents,
@@ -535,7 +538,7 @@ Tasks:
 - use explicit ELK selection and cleaned environment,
 - enforce timeout and output limits,
 - capture bounded stderr for diagnostics,
-- validate before render,
+- validate before render; distinguish a syntax rejection in build (FFX/6) from a supplied render artifact (FFD/1), and a process crash/timeout (execution/4),
 - reject partial output on non-zero exit.
 
 ### P3.6 — Body SVG verification
@@ -560,7 +563,7 @@ Tasks:
 - use project-root-relative input paths and manifest-relative output paths,
 - omit assetProcessing when no vector logo/icon was sanitized; keep actual font provenance in resources, with no fictional sanitizer record.
 
-### P3.8 — `compile`, low-level `render` and transactional `build`
+### P3.8 — `compile`, low-level `render` and recoverable `build`
 
 Tasks:
 
@@ -568,9 +571,12 @@ Tasks:
 - render body only, with optional explicit config for theme/fonts and no manifest,
 - implement PRD CLI flags, layout override, text/JSON diagnostics and debug behavior,
 - publish compile/render files using temporary files plus atomic replace,
-- publish builds using immutable generation directories, an advisory writer lock and atomic output symlink replacement as in technical-spec §11.1,
-- preserve the prior generation on failure; reject an existing ordinary target directory with migration guidance,
-- test simultaneous writers, readers pinning one generation, interruption (130), stale partial output and exact exit categories.
+- publish builds to ordinary dedicated directories using the bounded staging/backup/journal state machine in technical-spec §11.1,
+- accept absent/empty targets and intact previous FlowFrame outputs; reject foreign files, modified artifacts and output symlinks,
+- preserve the old target until rendering/verification succeeds; attempt rollback on publication failure and report any unsuccessful recovery,
+- retain at most one previous output and one staging set; automatically recover/clean only verified owned state under the writer lock,
+- test concurrent writers (execution/4), both rename crash windows, first build into an empty directory, rollback failure, cleanup failure, interruption (130) and exact exit categories,
+- document that two renames do not provide concurrent-reader atomicity; use the ordinary final files directly after successful completion.
 
 ### P3.9 — Alpha.1 example
 
@@ -596,7 +602,7 @@ build/payments/infrastructure/
 - a clean offline environment builds the payments infrastructure view,
 - repeat runs produce byte-identical D2 and normalized body SVG,
 - manifest validates and contains the pinned toolchain identity,
-- renderer failures preserve the previous complete output,
+- renderer failures before publication preserve the previous complete output; publication failures expose documented rollback/recovery behavior,
 - no source document can inject D2 or visual style,
 - all available CI platforms pass.
 
@@ -617,7 +623,7 @@ Tasks:
 - use the complete theme-independent `resources/mappings/v1.json` fallback table,
 - reject unknown token references,
 - verify meaning remains readable in grayscale,
-- add contrast checks for essential text and strokes.
+- feed resolved token/color/background combinations into the single contrast validator implemented in P4.9; do not implement a second checker here.
 
 ### P4.2 — Custom theme processing
 
@@ -732,12 +738,13 @@ Extend the P3 collector (do not implement a second manifest writer). Record:
 
 Tasks:
 
-- package a versioned kind-to-asset `index.json` with license/hash inventory; no free-text technology lookup,
-- sanitize and embed approved generic SVG icons in D2, testing standalone body render offline,
+- package a complete versioned kind-to-asset `index.json` with license/hash inventory; explicit null is silent, missing entries/files are errors and no free-text technology lookup is used,
+- sanitize and embed approved generic SVG icons once per sanitized asset identity, testing reuse across nodes/classes and standalone body render offline,
 - verify embedded font/icon data against provenance with no arbitrary data-URI allowance,
 - create `rules/visual-guidelines.md`, `layout-rules.md`, `naming-rules.md`, `diagram-types.md` and `accessibility-rules.md`,
 - emit top-level SVG title/desc, per-object accessible descriptions, deterministic textual summary and measured legend band,
-- implement contrast errors at PRD thresholds, with logo exception and grayscale checks,
+- verify `[deprecated]` text in visible labels and accessible descriptions; P5 extends the same check to flow/sequence,
+- implement the one shared contrast validator at PRD thresholds, with logo exception and grayscale checks; P4.1 supplies its resolved theme data,
 - connect the complete sanitizer/contrast/presentation checks to validate and compile as well as build.
 
 ### P4.10 — Project-wide build
@@ -746,7 +753,7 @@ Tasks:
 
 - implement `build --all` over the explicit `views` registry with one model/config/theme,
 - validate unique View IDs and contained paths before rendering,
-- publish to `<output-dir>/<view-id>/` in sorted order using P3 per-view transactions,
+- publish to `<output-dir>/<view-id>/` in sorted order using P3 per-view recoverable replacement,
 - test partial project progress reporting on failure without claiming project-wide atomicity,
 - update alpha examples to allow full branded project builds.
 
@@ -771,9 +778,9 @@ Complete the three-family MVP while reusing the same System Model, validation, t
 
 Tasks:
 
-- define directed flow nodes and edges,
+- define flow nodes and directed/bidirectional edges,
 - map integration relations, protocols and data/event annotations,
-- validate unsupported directionality or semantics,
+- reject selected undirected dependencies with FFV and exclusion/architecture-view guidance; prove unrelated or default-filtered dependencies do not block a flow view,
 - reuse the single PRD selection algorithm with integration-flow relation/display defaults; no separate traversal semantics,
 - add small, medium and nested-boundary fixtures,
 - add deterministic projection and D2 goldens.
@@ -783,7 +790,8 @@ Tasks:
 Tasks:
 
 - emit flow-specific D2 constructs through the shared writer,
-- map semantics to global tokens/classes,
+- map semantics to global tokens/classes and retain semantic-name labels when optional user labels are hidden,
+- render `[deprecated]` text markers and accessible descriptions,
 - verify arrow/label accessibility without color-only meaning,
 - render and snapshot with ELK.
 
@@ -803,7 +811,8 @@ Tasks:
 Tasks:
 
 - emit supported D2 sequence constructs,
-- map message kinds and directionality consistently,
+- implement solid single-arrow from-to messages, reverse messages for responses and self-messages without implying timing,
+- prove relationId does not import interaction/directionality styles; test the optional sequence legend against only actual message/note/numbering constructs,
 - render notes safely,
 - cover repeated participants, mandatory self-messages, note-only participants, explicit participant permutations and long labels,
 - document any D2 limitations accepted by the Stage 0 ADR.
@@ -843,7 +852,7 @@ The corpus includes:
 - small, medium and boundary-size cases,
 - nested boundaries,
 - long and Unicode labels,
-- missing optional icons,
+- explicit null icon mappings and invalid missing declared assets,
 - omitted presentation metadata,
 - custom global theme with every decoration,
 - deliberately invalid contracts and semantic states.
@@ -878,7 +887,7 @@ Tasks:
 
 Tasks:
 
-- automate contrast checks where geometry permits,
+- run the shared P4.9 contrast validator on the complete corpus, with geometry-aware integration checks where supported,
 - generate grayscale snapshots,
 - verify the selected text representation in every supported consumer, including equivalent accessibility metadata when text is converted to paths,
 - assert semantic distinctions do not rely only on color,
@@ -895,7 +904,7 @@ Tasks:
 - test text and JSON diagnostics,
 - provide concise success output,
 - hide stack traces outside debug mode,
-- ensure interrupted builds return non-success and keep previous artifacts.
+- ensure SIGINT returns 130, performs phase-appropriate rollback/cleanup and reports any retained backup when restoration fails; never assert that the old target is present without checking.
 
 ### P6.6 — Performance gates
 
@@ -978,7 +987,8 @@ Use a P7 pilot to freeze the representative corpus and v0.1 threshold before run
 Tasks:
 
 - implement the exact `flowframe review` signature from the PRD,
-- run syntax, semantic and policy modes without an AI dependency,
+- route syntax, semantic and policy modes to the same validation service as validate, without an AI dependency or duplicate rules,
+- prove default review findings/status equal model+view validate and explicit modes retain prerequisite checks,
 - require explicit `--source` inputs for source-conformance review,
 - report a missing optional adapter as exit code 3,
 - map error findings and invalid option combinations to the PRD exit-code contract,
@@ -1007,7 +1017,9 @@ Tasks:
 
 - build wheel and source distribution,
 - bundle schemas, built-in theme, fonts and required licenses,
-- provide pinned D2 installation with checksum verification or a documented external prerequisite,
+- ship an explicit pinned-D2 installer helper using approved official release artifacts and per-platform archive/executable checksums, plus instructions for offline installation,
+- test missing executable, wrong version and wrong executable hash as distinct exit-3 diagnostics with the correct installation guidance; matching version alone is insufficient,
+- never install/download D2 implicitly during validate/compile/render/build; updating the accepted pin requires a FlowFrame release,
 - verify package resource access outside the source checkout,
 - generate a software/dependency provenance inventory.
 
@@ -1030,14 +1042,15 @@ At least macOS and Linux run the installed-wheel smoke test. Expensive visual su
 
 Document:
 
-- installation of FlowFrame and pinned D2,
-- project structure,
+- installation of FlowFrame and the approved official D2 binary using the shipped helper or offline procedure; distribution rebuilds are unsupported unless their executable bytes match the pin,
+- project structure, including a common-root flowframe.yaml for sibling model/ and views/ directories,
 - creating `flowframe.yaml` and a global theme,
 - creating model and view files,
 - building one or all diagrams,
 - title, subtitle, static/source footer and logo behavior,
 - asset and font restrictions,
-- output/manifest interpretation,
+- output/manifest interpretation, header fingerprint equal to theme.sha256, and source versus execution/internal failure categories,
+- ordinary output directories, direct SVG links/commits, ignoring private .<name>.flowframe state, bounded retention and recovery guidance; no export step or symlink-aware reader is required,
 - CI examples for GitHub Actions and GitLab CI,
 - upgrades and golden snapshot review,
 - troubleshooting by diagnostic code.
@@ -1156,7 +1169,7 @@ After P0 decisions are accepted, the first reviewable sequence SHOULD be:
 9. add architecture selection, IR and projection,
 10. add deterministic D2 writer,
 11. add pinned D2 wrapper and body SVG verification,
-12. add transactional build and manifest,
+12. add staged build, bounded backup/recovery and manifest,
 13. publish v0.1-alpha.1,
 14. add production theme, sanitizer and decoration compositor,
 15. add flow and sequence families,
