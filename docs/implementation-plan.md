@@ -4,7 +4,7 @@
 
 This plan decomposes [`prd.md`](prd.md) and [`technical-spec.md`](technical-spec.md) into ordered, independently verifiable work packages for FlowFrame v0.1.
 
-The plan uses completion gates instead of calendar estimates. A phase is complete only when its exit criteria pass in CI. Later work MAY begin in parallel where dependencies allow, but no milestone may be declared complete by deferring a failed gate.
+The plan uses completion gates instead of calendar estimates. A phase is complete when its applicable automated gates pass in CI and required human reviews/ADRs are accepted. P0 is an experiment-and-decision gate, not a claim that ADR acceptance is executable in CI. Later work MAY begin in parallel where dependencies allow, but no milestone may be declared complete by deferring a failed gate.
 
 The PRD is authoritative for product behavior. The technical specification is authoritative for the proposed implementation unless an accepted ADR changes it.
 
@@ -39,18 +39,7 @@ The PRD is authoritative for product behavior. The technical specification is au
 
 ### 3.1. Dependency chain
 
-```text
-P0
-└── P1
-    └── P2
-        └── P3
-            ├── P4 ──┐
-            └── P5 ──┴── P6
-                          └── P7
-                              └── P8
-
-P9 starts only after v0.1 unless a separate product decision changes scope.
-```
+P0 → P1 → P2 → P3. P4 presentation implementation and P5 family implementation may proceed in parallel after P3; the P5 cross-family branded release gate also requires P4. P6 hardening starts after P4/P5. P7 adapter work needs the P5 contracts and may run alongside P6; P8 release requires both P6 and P7. P9 follows v0.1.
 
 P4 theme schema work can start after P1, but SVG composition integrates only after P3 produces body SVG. Flow and sequence IR design can start after P2, but their release gate depends on the deterministic generator and renderer established in P3.
 
@@ -86,7 +75,8 @@ Remove uncertainty around D2, deterministic SVG generation, text measurement, lo
 Deliverables:
 
 - `docs/adr/README.md` with ADR states and template,
-- ADR for Python CLI and process-boundary integration with D2,
+- ADR recording the selected Python CLI, `uv`/Hatchling and process boundary with D2,
+- establish the supported documentation-consumer/browser list before P0.3/P0.4 experiments,
 - ADR for ELK baseline and optional TALA,
 - ADR for schema authority and contract versioning,
 - ADR for global presentation composition outside D2 body layout.
@@ -125,7 +115,9 @@ Tasks:
 - render each fixture repeatedly in two isolated directories,
 - compare D2 bytes, raw SVG and normalized SVG,
 - inventory nondeterministic SVG fields and ordering,
-- exercise long labels, Unicode, nested containers and both relation directions,
+- exercise long labels, Unicode, nested containers, all directionality values and mandatory self-messages/notes,
+- prove embedded generic SVG icon data URIs render offline,
+- inventory D2 font data URIs and verify that plain labels produce no `foreignObject` (markdown labels are forbidden),
 - compare text layout and appearance in every supported documentation consumer,
 - confirm sequence output has sufficient stable hooks for later composition,
 - define the minimum SVG normalization behavior without changing painter order,
@@ -135,7 +127,8 @@ Acceptance:
 
 - sources of nondeterminism are understood,
 - a normalization approach is selected,
-- unsupported D2 constructs are listed,
+- unsupported D2 constructs are listed; required self-messages cannot be downgraded to optional,
+- pin the body-padding flag and portable hierarchical/compact profile mapping,
 - no required MVP view needs manual coordinates.
 
 ### P0.4 — Presentation composition spike
@@ -160,6 +153,7 @@ Tasks:
 - test the chosen strategy on both D2 body text and FlowFrame decoration text,
 - test bundled fonts without host font discovery,
 - derive top/bottom band and width expansion calculations,
+- test immutable generation publication and pointer-pinning readers on supported filesystems; document export/commit of resolved artifacts separately from the live build pointer,
 - verify that translating the body preserves internal geometry,
 - verify view-box and canvas behavior in target documentation renderers.
 
@@ -192,7 +186,8 @@ Tasks:
 - write the exact `flowframe-svg-logo/v1` matrix in `rules/svg-logo-profile-v1.md`,
 - validate candidate XML and CSS libraries,
 - prototype deterministic ID rewriting and reference normalization,
-- select canonical number and namespace serialization,
+- select lossless number and namespace serialization,
+- test Illustrator/Inkscape-style comments/metadata, allowlisted editor namespaces and fragment-only `xlink:href`,
 - choose numeric security limits from measured fixtures,
 - confirm full-asset rejection with actionable diagnostics.
 
@@ -208,15 +203,13 @@ Acceptance:
 
 Decide and record:
 
-- package manager/build backend,
 - schema compatibility and deprecation policy,
-- supported documentation renderers and browsers,
 - committed-versus-generated SVG policy,
 - icon set and license,
 - initial numeric input/process limits,
 - baseline performance budgets,
 - scope of v0.1 custom fonts,
-- technology-name and protocol display policy for every detail level.
+- verify PRD §10.8 display defaults on the corpus; any change updates the contract first.
 
 ### P0 exit gate
 
@@ -242,7 +235,7 @@ Tasks:
 - configure `uv.lock`, Ruff, mypy and pytest,
 - add `src/flowframe` package and `flowframe` console entry point,
 - add version reporting from installed package metadata,
-- establish `tests/unit`, `tests/contract`, `tests/integration`, `tests/golden` and `tests/security`,
+- establish `tests/unit`, `tests/contract`, `tests/integration`, `tests/golden`, `tests/snapshots` and `tests/security`,
 - add one verification command used locally and in CI,
 - ensure wheel and source distribution include schemas and built-in theme resources.
 
@@ -274,7 +267,8 @@ Acceptance:
 
 Implement `flowframe-config.schema.json` for `flowframe-config/v1`:
 
-- required theme ID or versioned built-in default behavior,
+- optional theme defaulting to `flowframe-light` and complete recursive `flowframe-default` values from PRD §13.2,
+- `render.layoutEngine: elk` and explicit project-relative `views` registry,
 - logo asset selection and `top-left`/`top-right` placement,
 - title `top-left`/`top-center` placement,
 - footer enablement, template and bottom placement,
@@ -287,7 +281,6 @@ Fixtures cover:
 - static footer,
 - source footer,
 - invalid positions,
-- same top slot assigned to title and logo,
 - unknown properties.
 
 ### P1.4 — System Model schema
@@ -296,8 +289,9 @@ Tasks:
 
 - encode element, boundary, relation and scenario structures,
 - encode the controlled vocabularies from the PRD,
-- require `source` and `target` for directed and undirected relations,
-- restrict scenario note `participant` syntactically to an element-ID-shaped reference,
+- require explicit IDs plus `source` and `target` for every relation, including bidirectional/undirected,
+- require semantic/interaction; encode optional payload, metadata and message protocol/relationId,
+- keep reference primitives shared; semantic validation checks whether participants are elements,
 - prohibit visual styling fields,
 - define limits for labels, descriptions and IDs.
 
@@ -309,7 +303,9 @@ Tasks:
 
 - encode family/subtype combinations,
 - encode audience, detail, selection and portable layout preferences,
-- encode family-specific required fields,
+- encode family-specific required/forbidden fields and complete display/layout defaults,
+- forbid sequence select/exclude; allow scenarioId and an optional exact participants order,
+- encode relation filters for architecture/flow, depth 1–10 and explicit model/view discriminators,
 - restrict `presentation` to `title`, `subtitle` and `source`,
 - reject theme, color, font, logo and position overrides,
 - encode documented presentation text limits.
@@ -331,10 +327,10 @@ Manifest schema includes:
 - configuration/model/view paths, schema versions and hashes,
 - resolved theme ID/version/origin/hash,
 - renderer/layout versions and flags,
-- sanitizer profile and implementation identity,
-- per-asset original and sanitized hashes,
+- optional assetProcessing, required when any vector logo/icon was sanitized, with actual sanitizer identity and hashes,
+- used icon/font resources with logical origin, license and SHA-256,
 - D2/SVG output hashes,
-- `generatedAt`.
+- optional UTC `generatedAt` from `SOURCE_DATE_EPOCH` only.
 
 ### P1.7 — Built-in resources and examples
 
@@ -379,10 +375,10 @@ Tasks:
 Tasks:
 
 - implement explicit `--config` resolution,
-- implement nearest-parent `flowframe.yaml` discovery,
+- implement nearest-parent discovery bounded by the VCS root; outside VCS check the model directory only,
 - implement the versioned built-in config when absent,
 - resolve project root from config location,
-- resolve themes project-first then package resources,
+- resolve theme inventory and references, reserving built-in IDs and rejecting project shadowing,
 - reject traversal and symlink escape,
 - expose logical relative paths separately from physical paths.
 
@@ -414,13 +410,14 @@ Tasks:
 - implement text and JSON renderers,
 - map JSON Schema paths back to YAML locations,
 - reserve diagnostic prefixes from the technical specification,
-- add redaction rules for absolute paths and exception details.
+- add redaction rules for absolute paths and exception details,
+- create `docs/diagnostics.md` as the code/category/exit registry and test precedence of mixed errors.
 
 ### P2.5 — Semantic validator
 
 Implement and test:
 
-- global ID uniqueness in each namespace,
+- one model-wide ID namespace, including all steps, and separate unique project View IDs,
 - element/boundary/relation/scenario reference resolution,
 - boundary containment and cycle detection,
 - valid parent types and family constraints,
@@ -431,8 +428,13 @@ Implement and test:
 - scenario message references and order,
 - theme token existence and semantic mapping coverage,
 - asset declaration and media-type consistency,
-- branding slot conflicts,
-- footer grammar and escaped brace rules.
+- branding slot conflicts with FFC diagnostics (semantic, not schema fixture rejection),
+- footer grammar and escaped brace rules,
+- View family/subtype, scenarioId and participants, selection IDs and relation filters, traversal bounds, defaults and layout compatibility,
+- explicit system ancestry and forbidden actor/external-system membership,
+- PRD relation combination matrix, including event+synchronous warning.
+
+P2 owns structural/reference checks and path policy. Asset-content sanitization, measurable contrast and full custom presentation validation integrate in P4.
 
 ### P2.6 — Footer template parser
 
@@ -452,7 +454,8 @@ Tasks:
 
 - connect resolver, loaders, schemas and semantic validators,
 - support human and JSON diagnostics,
-- return exit code 0 or 1 as appropriate,
+- use PRD category-to-exit mapping, including policy error 5 and internal error 6,
+- implement model-only and exclusive theme-only forms; explicitly reject unsupported P4 asset-content/custom-presentation requests in this prerelease rather than claiming full validation,
 - define deterministic diagnostic order across documents,
 - ensure validation performs no rendering and writes no artifacts.
 
@@ -482,7 +485,9 @@ Tasks:
 - include relations only for eligible endpoints,
 - retain inclusion reasons for debugging,
 - enforce stable source order with ID tie-breakers,
-- warn or error on empty selections according to PRD semantics.
+- error on empty selections, warn for excluded explicit IDs and disconnected results,
+- test A–B–C with excluded B to prove traversal cannot reach C,
+- test empty filters, AND across criteria, relation-filtered traversal and bidirectional exploration.
 
 ### P3.2 — Architecture IR
 
@@ -514,7 +519,9 @@ Tasks:
 - implement audited string/identifier escaping,
 - implement fixed property ordering and one-newline serialization,
 - emit generated-file header without volatile values,
-- map semantic roles through built-in theme tokens/classes,
+- map semantic roles through built-in theme tokens/classes and framework mappings,
+- materialize classes; emit no imports or host paths; include deterministic theme fingerprint in the header,
+- implement the explicit D2 lint rule list in technical-spec §10,
 - emit nodes before relations,
 - prohibit raw D2 from source documents,
 - add byte-identical D2 golden tests.
@@ -545,25 +552,29 @@ Tasks:
 
 Tasks:
 
-- record source/config/theme hashes and schema versions,
+- implement raw-byte aggregate built-in theme hashing now, including licensed font resources, then record source/config/theme hashes and schema versions,
 - record D2/layout identity and flags,
 - record output hashes,
 - serialize stable JSON and validate it against manifest schema,
-- ensure `generatedAt` never affects D2 or SVG.
+- omit `generatedAt` unless valid `SOURCE_DATE_EPOCH` is supplied; never let it affect D2/SVG,
+- use project-root-relative input paths and manifest-relative output paths,
+- omit assetProcessing when no vector logo/icon was sanitized; keep actual font provenance in resources, with no fictional sanitizer record.
 
-### P3.8 — Transactional `compile` and `build`
+### P3.8 — `compile`, low-level `render` and transactional `build`
 
 Tasks:
 
-- write into a sibling staging directory,
-- publish all three files only on complete success,
-- preserve the previous successful build on failure,
-- return specified exit categories,
-- add interruption and stale-partial-output tests.
+- compile without D2; render only generated, policy-linted D2 with matching theme fingerprint,
+- render body only, with optional explicit config for theme/fonts and no manifest,
+- implement PRD CLI flags, layout override, text/JSON diagnostics and debug behavior,
+- publish compile/render files using temporary files plus atomic replace,
+- publish builds using immutable generation directories, an advisory writer lock and atomic output symlink replacement as in technical-spec §11.1,
+- preserve the prior generation on failure; reject an existing ordinary target directory with migration guidance,
+- test simultaneous writers, readers pinning one generation, interruption (130), stale partial output and exact exit categories.
 
 ### P3.9 — Alpha.1 example
 
-Add the payments example required by the PRD:
+Add the payments example required by the PRD, with minimal built-in config, footer disabled, `display.legend: false`, no logo/custom theme and no presentation metadata. Unsupported P4 presentation requests fail explicitly; alpha.1 MUST NOT accept and silently ignore branding:
 
 ```text
 examples/payments/flowframe.yaml
@@ -597,26 +608,26 @@ build/payments/infrastructure/
 
 Apply one project-wide Theme/Brand Pack and safely add title, subtitle, source footer and logo without modifying semantic layout.
 
-### P4.1 — Complete design tokens and mappings
+### P4.1 — Rendering design tokens and mappings
 
 Tasks:
 
-- implement every PRD token class,
+- render every PRD token class using the structures/reference checks already implemented in P2,
 - implement mappings from element kinds and relation semantics,
-- provide documented built-in fallbacks for optional mappings,
+- use the complete theme-independent `resources/mappings/v1.json` fallback table,
 - reject unknown token references,
 - verify meaning remains readable in grayscale,
 - add contrast checks for essential text and strokes.
 
-### P4.2 — Theme resolver and aggregate hash
+### P4.2 — Custom theme processing
 
 Tasks:
 
 - load exactly one complete theme pack,
 - prohibit partial merging of project and built-in packs,
-- resolve only missing semantic mappings from the versioned built-in theme and require their resulting tokens in the selected theme,
+- reuse P2 resolution and reference validation; resolve missing mappings from framework defaults,
 - resolve only declared local assets,
-- hash canonical theme metadata and referenced assets in stable path order,
+- reuse P3 raw-byte aggregate hashing for custom theme metadata, license inventory and referenced assets in stable path order,
 - record `project` or `built-in` origin,
 - ensure project themes are rooted at `<project-root>/themes/<id>/`.
 
@@ -646,7 +657,8 @@ Tasks:
 - parse CSS with `tinycss2`,
 - validate all reference graphs and reject missing/cyclic invalid references,
 - reject external or data URLs and raster images,
-- fail on unknown content without stripping it,
+- fail on unknown rendering/active content; remove only the profile's allowlisted inert editor metadata/comments,
+- accept safe fragment-only xlink references and preserve numeric values without rounding,
 - rewrite IDs and references deterministically,
 - produce canonical bytes and both hashes,
 - require and expose finite intrinsic bounds to the compositor.
@@ -666,7 +678,8 @@ Tasks:
 - render static and source footer tokens as escaped plain text,
 - omit a source-dependent footer when source is absent,
 - preserve a static footer when source is absent,
-- enforce presentation text limits before rendering.
+- enforce NFC code-point limits and reject control characters,
+- wrap text deterministically with pinned metrics, whitespace breaks and grapheme fallback under the global maximum width.
 
 ### P4.6 — Decoration compositor
 
@@ -676,7 +689,7 @@ Implement in this order:
 2. measure title block, logo and footer,
 3. fit logo within per-asset display bounds with aspect ratio preserved,
 4. calculate top and bottom bands using `decoration-gap`,
-5. expand canvas width for wider decorations,
+5. calculate combined slot widths and symmetric clearance around centered titles using PRD §13.6,
 6. translate body once,
 7. place fragments in supported slots using collision-safe deterministic IDs,
 8. normalize and verify final SVG.
@@ -700,20 +713,42 @@ Tests cover:
 Tasks:
 
 - reject per-view theme, raw style, font, logo and position fields,
-- build all three family fixtures with one project theme when available,
+- build multiple infrastructure fixtures with one project theme; the all-three-family check belongs to the P5 gate,
 - prove every output resolves the same theme hash,
 - add a custom branded fixture with logo, title and source footer,
 - ensure config changes affect all project diagrams on rebuild.
 
 ### P4.8 — Manifest presentation provenance
 
-Record:
+Extend the P3 collector (do not implement a second manifest writer). Record:
 
 - resolved config path or built-in ID/version,
 - theme identity, origin and aggregate hash,
 - sanitizer profile and implementation identity,
 - used asset input and sanitized hashes,
 - final decorated SVG hash.
+
+### P4.9 — Generic icons, accessibility and rules
+
+Tasks:
+
+- package a versioned kind-to-asset `index.json` with license/hash inventory; no free-text technology lookup,
+- sanitize and embed approved generic SVG icons in D2, testing standalone body render offline,
+- verify embedded font/icon data against provenance with no arbitrary data-URI allowance,
+- create `rules/visual-guidelines.md`, `layout-rules.md`, `naming-rules.md`, `diagram-types.md` and `accessibility-rules.md`,
+- emit top-level SVG title/desc, per-object accessible descriptions, deterministic textual summary and measured legend band,
+- implement contrast errors at PRD thresholds, with logo exception and grayscale checks,
+- connect the complete sanitizer/contrast/presentation checks to validate and compile as well as build.
+
+### P4.10 — Project-wide build
+
+Tasks:
+
+- implement `build --all` over the explicit `views` registry with one model/config/theme,
+- validate unique View IDs and contained paths before rendering,
+- publish to `<output-dir>/<view-id>/` in sorted order using P3 per-view transactions,
+- test partial project progress reporting on failure without claiming project-wide atomicity,
+- update alpha examples to allow full branded project builds.
 
 ### P4 exit gate
 
@@ -739,7 +774,7 @@ Tasks:
 - define directed flow nodes and edges,
 - map integration relations, protocols and data/event annotations,
 - validate unsupported directionality or semantics,
-- implement family-specific selection expansion,
+- reuse the single PRD selection algorithm with integration-flow relation/display defaults; no separate traversal semantics,
 - add small, medium and nested-boundary fixtures,
 - add deterministic projection and D2 goldens.
 
@@ -770,7 +805,7 @@ Tasks:
 - emit supported D2 sequence constructs,
 - map message kinds and directionality consistently,
 - render notes safely,
-- cover repeated participants, self-message if supported and long labels,
+- cover repeated participants, mandatory self-messages, note-only participants, explicit participant permutations and long labels,
 - document any D2 limitations accepted by the Stage 0 ADR.
 
 ### P5.5 — Cross-family reuse example
@@ -856,7 +891,7 @@ Tasks:
 Tasks:
 
 - test every command help page,
-- test exit codes 0–6, including a synthetic unexpected exception returning code 6,
+- test exit codes 0–6 and SIGINT 130, including a synthetic exception and mixed-category precedence,
 - test text and JSON diagnostics,
 - provide concise success output,
 - hide stack traces outside debug mode,
@@ -874,7 +909,7 @@ Tasks:
 
 ### P6 exit gate — release candidate
 
-- all PRD acceptance criteria unrelated to AI and packaging pass,
+- all PRD acceptance criteria unrelated to P7 review/AI and P8 packaging pass,
 - the full suite runs offline,
 - supported-platform reproducibility is documented and tested,
 - security corpus fails closed,
@@ -893,6 +928,7 @@ Add one optional adapter that produces public structured contracts without recei
 
 Tasks:
 
+- select and record the first adapter platform/provider,
 - define provider-neutral request/result types,
 - separate source-document extraction from model/view generation,
 - accept structured output only,
@@ -905,10 +941,13 @@ Create:
 
 - System Model generation prompt,
 - View Specification generation prompt,
-- explicit uncertainty/assumption format,
+- explicit human-readable uncertainty/assumption report outside the closed model/view YAML schemas,
 - rule forbidding raw styles and invented source claims,
 - instructions to reuse stable IDs and existing model content,
-- source-conformance mode.
+- source-conformance mode,
+- `review-diagram.md`, `compare-with-source.md`, `rules/ai-generation-rules.md` and one generation skill/equivalent adapter.
+
+`simplify-view.md`, automated diagram-refactor skills and visual-review adapters are P9; the deterministic core remains network-free.
 
 ### P7.3 — Validation-repair loop
 
@@ -932,7 +971,7 @@ Measure:
 - absence of styling fields,
 - correct view family and selection.
 
-Set the v0.1 threshold from P0/P7 baseline before release acceptance.
+Use a P7 pilot to freeze the representative corpus and v0.1 threshold before running the release evaluation. Do not adjust the threshold after observing release results.
 
 ### P7.5 — Read-only review command
 
@@ -941,7 +980,6 @@ Tasks:
 - implement the exact `flowframe review` signature from the PRD,
 - run syntax, semantic and policy modes without an AI dependency,
 - require explicit `--source` inputs for source-conformance review,
-- require an explicit `--svg` for visual review,
 - report a missing optional adapter as exit code 3,
 - map error findings and invalid option combinations to the PRD exit-code contract,
 - emit text or stable JSON findings,
@@ -952,7 +990,7 @@ Tasks:
 - one adapter generates models and views that enter the unchanged compiler,
 - invalid AI output cannot bypass validation,
 - the evaluation threshold is defined and achieved,
-- raw theme/style values are never generated,
+- normal model/view generation never emits theme/style values; explicit branding edits are a separate authorized workflow,
 - assumptions and source gaps remain visible to the user.
 
 ---
@@ -1033,7 +1071,7 @@ These items do not block v0.1:
 - PNG, PDF and PPTX outputs,
 - Windows release support,
 - schema migration tooling,
-- advanced visual-analysis loop,
+- advanced visual-analysis loop, `review --mode visual`, simplify/refactor prompts and skills with a defined quality metric,
 - public extension/plugin API,
 - performance cache with complete content-addressed keys.
 
@@ -1076,21 +1114,30 @@ Do not group unrelated schema, renderer and presentation changes into one review
 
 | PRD requirement | Primary implementation packages | Main verification |
 |---|---|---|
-| Versioned YAML contracts | `contracts`, `domain`, `validation/schema.py` | Schema fixture suite |
-| Semantic correctness | `validation/semantic.py` | Invalid-model corpus |
+| Acceptance 1–2: versioned contracts and actionable diagnostics | `contracts`, `domain`, `validation/schema.py` | Schema fixture suite |
+| Semantic correctness (2) | `validation/semantic.py` | Invalid-model corpus |
 | Deterministic selection | `selection` | Unit and property tests |
 | Family-specific behavior | `projection`, `ir` | Projection goldens |
-| Deterministic D2 | `generation` | Byte golden tests |
+| Deterministic D2 (3, 7) | `generation` | Byte golden tests |
 | ELK/D2 rendering | `rendering/d2_process.py` | Offline integration tests |
-| Global theme | `presentation/theme_resolver.py` | Cross-view/family consistency tests |
+| Global theme (5, 6) | `presentation/theme_resolver.py` | Cross-view/family consistency tests |
 | Title/subtitle/footer/logo | `presentation` | Decorated SVG snapshots |
 | Footer grammar | `presentation/footer_template.py` | Grammar and fuzz tests |
 | Safe deterministic logos | `presentation/logo_sanitizer.py` | Allow/reject/canonicalization corpus |
 | No decoration overlap | `presentation/compositor.py` | Bounds assertions and visual review |
-| Provenance | `manifest` | Schema and hash assertions |
+| Provenance (12) | `manifest` | Schema and hash assertions |
 | Secure boundaries | loaders, resolver, sanitizer, process wrapper | Security suite |
 | AI isolation | optional adapter | Evaluation and bypass tests |
-| Offline operation | complete runtime | Network-disabled CI job |
+| Offline operation (4) | complete core runtime | Network-disabled CI job |
+| Same-model architecture/flow/sequence (8) | P5 projectors/generators | Cross-family golden corpus |
+| Accessible metadata, legends, contrast (10, 11, 17) | P4.9, P6.4 | SVG metadata assertions, measured contrast, grayscale/manual review |
+| CLI errors and cancellation (13, 18) | P2.4, P3.8, P6.5 | Category/precedence/130 contract tests |
+| Read-only review (18) | P7.5 | No writes, adapter absence and findings tests |
+| Generic icons/offline asset provenance (4, 12) | P4.9, manifest | Embedded asset/hash/license tests |
+| All registered views in one command (15) | P4.10, P8.3 | Installed CLI project build |
+| Golden geometry (9) | P4.6, P5, P6 | Bounds and visual snapshots |
+| AI quality (14) | P7.4 | Frozen evaluation corpus |
+| Security fail-closed behavior (16) | P6.3 | Rejection corpus |
 
 ---
 

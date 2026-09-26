@@ -48,6 +48,9 @@ Natural language / source documentation
         D2 validation and rendering
                  │
                  ▼
+      SVG branding, accessibility and verification
+                 │
+                 ▼
       diagram.d2 + diagram.svg + manifest
 ```
 
@@ -94,7 +97,7 @@ Deployment, system-context, network-security, data-flow, event-flow and dependen
 The System Model contains reusable facts about the system. It distinguishes runtime elements from boundaries and keeps visual properties out of the source data.
 
 ```yaml
-schemaVersion: flowframe/v1
+schemaVersion: flowframe-model/v1
 system:
   id: payments-platform
   label: Payments Platform
@@ -103,6 +106,7 @@ boundaries:
   - id: production
     kind: environment
     label: Production
+    parentId: payments-platform
 
   - id: application-network
     kind: network
@@ -142,7 +146,7 @@ Vendor products use semantic kinds plus optional technology metadata. For exampl
 A view selects information from the System Model and defines its purpose without duplicating the system inventory.
 
 ```yaml
-schemaVersion: flowframe/v1
+schemaVersion: flowframe-view/v1
 id: infrastructure-overview
 family: architecture
 subtype: infrastructure
@@ -192,14 +196,17 @@ FlowFrame never switches layout engines silently based on a subjective visual-qu
 ## Planned CLI
 
 ```text
-flowframe validate --model MODEL --view VIEW [--config CONFIG]
+flowframe validate --model MODEL [--view VIEW] [--config CONFIG]
+flowframe validate --theme THEME_FILE
 flowframe compile --model MODEL --view VIEW [--config CONFIG] --output diagram.d2
-flowframe render --input diagram.d2 --layout elk --output diagram.svg
-flowframe build --model MODEL --view VIEW [--config CONFIG] --output-dir build/
+flowframe render --input diagram.d2 [--layout elk] [--config CONFIG] --output diagram.svg
+flowframe build --model MODEL (--view VIEW | --all) [--config CONFIG] [--layout elk] --output-dir build/
 flowframe review --model MODEL --view VIEW [--config CONFIG] [--mode MODE]
 ```
 
-`review` is added with the Stage 4 adapter; deterministic syntax, semantic and policy modes remain available without AI. `compare-layouts` is post-MVP because v0.1 requires only ELK. Its provisional contract is documented in the PRD and technical specification.
+`build` produces the final branded diagram; `render` produces only its body and requires generated, policy-checked D2 plus matching theme configuration. `build --all` reads the config's explicit `views` list and writes to `build/<view-id>/`. Every processing command supports `--format text|json` and `--debug`.
+
+`review` is added in Stage 4; syntax, semantic and policy modes work without AI. Source-conformance uses the optional adapter; visual review is post-MVP. `compare-layouts` is post-MVP because v0.1 requires only ELK. Its provisional contract is documented in the PRD and technical specification.
 
 These commands describe the v0.1 contract and are not implemented yet.
 
@@ -242,7 +249,7 @@ AI must not generate authoritative D2 directly, invent raw styling or silently c
 6. Package the tool and provide CI integrations.
 7. Add optional engines, diagram subtypes and vendor icon packs.
 
-See [docs/prd.md](docs/prd.md) for requirements, acceptance criteria, risks and the complete implementation plan.
+See [docs/prd.md](docs/prd.md) for requirements, acceptance criteria and risks; task sequencing is maintained in [the implementation plan](docs/implementation-plan.md).
 
 ---
 
