@@ -39,24 +39,28 @@ The v0.1 implementation does not provide a GUI, manual placement, arbitrary per-
 
 | Concern | Selection | Notes |
 |---|---|---|
-| Language | Python 3.12+ | Type annotations are mandatory in production code. |
-| Packaging | `pyproject.toml` with `uv` | Lock application and development dependencies. Build wheels with Hatchling. |
+| Language | Python 3.12+ | Type annotations are mandatory in production code. CI runs 3.12 and 3.13. |
+| Packaging | `pyproject.toml` with `uv` | Lock application and development dependencies. Build wheels with Hatchling. Static package version (no VCS-derived versions). |
 | CLI | Typer | Thin command layer; business logic stays callable without a terminal. |
 | YAML | `ruamel.yaml` parser/composer | Retain node marks, allow only core YAML tags and construct JSON-compatible values in FlowFrame code. |
 | Schema validation | `jsonschema`, Draft 2020-12 | JSON Schema files are the public structural contracts. |
 | Internal models | frozen dataclasses and enums | Constructed only after structural validation; avoid a second public validation contract. |
 | XML/SVG | hardened `lxml` parser | Disable entity resolution, DTD loading and network access. |
 | CSS parsing | `tinycss2` | Required for allowlist validation of SVG `<style>` content. |
+| Font metrics | selected by ADR-0007 (candidates `fontTools`, `uharfbuzz`) | Deterministic text measurement for labels and decorations; text-to-path conversion if selected. |
+| Grapheme segmentation | `regex` (`\X`) | Wrapping fallback at grapheme boundaries. |
+| Property and fuzz tests | `hypothesis` | Footer grammar, D2 escaping, ID mapping, selection invariants, SVG references. |
+| SBOM | CycloneDX JSON generator | Release provenance inventory (ADR-0024). |
 | Hashing | Python `hashlib.sha256` | Hash raw source bytes and canonical processed bytes as defined below. |
 | D2 integration | pinned D2 CLI through `subprocess` | No shell invocation. Direct Go integration is deferred. |
 | Tests | `pytest` | Unit, contract, integration, golden, snapshot and security suites. |
 | Static quality | Ruff and mypy | Formatting/linting and strict checks for the core packages. |
 
-Dependency versions MUST be locked for releases. D2 itself MUST be installed at the version selected by the Stage 0 ADR and verified by checksum. Resolve `FLOWFRAME_D2` (explicit absolute executable path) before PATH and verify the chosen executable's version and SHA-256 against the packaged platform-specific pin on every rendering invocation. Only official release executables matching the packaged per-platform pin are supported; distribution rebuilds with different bytes are not. A pinned installer helper MUST obtain and verify the approved release artifact explicitly, with an offline installation path. Builds MUST NOT download D2 automatically. Missing executable, version mismatch and checksum mismatch have distinct dependency diagnostics, all returning 3 with installation guidance. Updating the accepted pin requires a FlowFrame release. This applies to all builds, without a special reproducible/CI mode.
+Dependency versions MUST be locked for releases. D2 itself MUST be installed at the version recorded in `resources/d2-pin.json` ([ADR-0006](adrs/0006-pinned-d2-distribution.md)) and verified by checksum. Resolve `FLOWFRAME_D2` (explicit absolute executable path) before PATH and verify the chosen executable's version and SHA-256 against the packaged platform-specific pin on every rendering invocation. Only official release executables matching the packaged per-platform pin are supported; distribution rebuilds with different bytes are not. The installer helper `python -m flowframe.install_d2` obtains and verifies the approved release artifact explicitly, with an offline `--from-archive` path; it is delivered in P1.8 and used by CI. Builds MUST NOT download D2 automatically. Missing executable, version mismatch and checksum mismatch have distinct dependency diagnostics, all returning 3 with installation guidance. Updating the accepted pin requires a FlowFrame release. This applies to all builds, without a special reproducible/CI mode.
 
 ### 3.1. Supported platforms
 
-v0.1 targets macOS and Linux on architectures for which the pinned D2 release is available. Windows MAY work through Python and D2 but is not a release gate until a Windows CI job is explicitly added.
+v0.1 targets macOS and Linux on architectures for which the pinned D2 release is available, on local POSIX filesystems (ADR-0010). Advisory locking uses POSIX `fcntl`. Windows MAY work through Python and D2 but is not a release gate until a Windows CI job is explicitly added.
 
 ---
 
@@ -109,6 +113,7 @@ Each arrow is a typed module boundary. A module MUST NOT reach around the bounda
 src/flowframe/
 ├── cli.py
 ├── api.py
+├── install_d2.py           # `python -m flowframe.install_d2` (ADR-0006)
 ├── diagnostics.py
 ├── errors.py
 ├── project/
@@ -121,6 +126,7 @@ src/flowframe/
 │   └── versions.py
 ├── domain/
 │   ├── config.py
+│   ├── defaults.py         # single default resolver (ADR-0019)
 │   ├── model.py
 │   ├── view.py
 │   ├── theme.py
@@ -145,6 +151,8 @@ src/flowframe/
 ├── generation/
 │   ├── d2_writer.py
 │   ├── escaping.py
+│   ├── labels.py           # label composition (ADR-0011)
+│   ├── line_styles.py      # shared with the legend (ADR-0015)
 │   └── families/
 ├── rendering/
 │   ├── d2_process.py
@@ -154,6 +162,10 @@ src/flowframe/
 │   ├── theme_resolver.py
 │   ├── footer_template.py
 │   ├── text_fragments.py
+│   ├── text_metrics.py     # shared measurement and wrapping (ADR-0007)
+│   ├── contrast.py         # single contrast validator (ADR-0012)
+│   ├── legend.py
+│   ├── accessibility.py    # title/desc/ARIA injection (ADR-0014)
 │   ├── logo_sanitizer.py
 │   └── compositor.py
 ├── review/
@@ -168,8 +180,11 @@ src/flowframe/
     ├── themes/flowframe-light/
     ├── fonts/flowframe-default/
     ├── mappings/v1.json
+    ├── defaults/v1.json    # ADR-0019
+    ├── limits/v1.json      # ADR-0009
+    ├── d2-pin.json         # ADR-0006
     ├── d2/                 # internal templates; never output imports
-    └── icons/generic/
+    └── icons/generic/      # pre-sanitized at package build (ADR-0013)
 ```
 
 Public entry points SHOULD be limited to the CLI and a small facade in `api.py`. Internal modules MAY change before v1 without compatibility guarantees.
@@ -186,9 +201,11 @@ The canonical schemas are:
 - `src/flowframe/resources/schemas/system-model.schema.json` for `flowframe-model/v1` System Models,
 - `src/flowframe/resources/schemas/view.schema.json` for `flowframe-view/v1` View Specifications,
 - `src/flowframe/resources/schemas/flowframe-theme.schema.json` for `flowframe-theme/v1`,
-- `src/flowframe/resources/schemas/flowframe-manifest.schema.json` for `flowframe-manifest/v1`.
+- `src/flowframe/resources/schemas/flowframe-manifest.schema.json` for `flowframe-manifest/v1`,
+- `src/flowframe/resources/schemas/flowframe-diagnostics.schema.json` for `flowframe-diagnostics/v1` JSON diagnostics (ADR-0016),
+- `src/flowframe/resources/schemas/flowframe-d2-pin.schema.json` for `flowframe-d2-pin/v1` (ADR-0006).
 
-Schemas MUST set `additionalProperties: false` at every closed object boundary. Extensions, if later supported, require a dedicated namespaced field rather than accepting misspelled properties.
+Schemas MUST set `additionalProperties: false` at every closed object boundary. Extensions, if later supported, require a dedicated namespaced field rather than accepting misspelled properties. Versioning and multi-version support follow [ADR-0004](adrs/0004-schema-authority-and-contract-versioning.md). JSON Schema `default` annotations are informative; defaults are applied only by `domain/defaults.py` from `resources/defaults/v1.json` ([ADR-0019](adrs/0019-default-value-resolution.md)).
 
 ### 6.2. Project root
 
@@ -199,7 +216,7 @@ Resolution is deterministic:
 3. If none exists, use the System Model directory as the effective root and create the versioned built-in configuration in memory.
 4. Resolve all project-relative paths against that root, never against the process working directory.
 
-With no configuration the model directory is the project root. An out-of-root View diagnostic MUST suggest placing `flowframe.yaml` in the common ancestor of model and View and, if necessary, passing `--config`; sibling `model/` and `views/` directories are supported with that explicit common root.
+With no configuration the model directory is the project root. An out-of-root View is an FFC validation error (1); a symlink or asset escaping the root is a policy error (5). The out-of-root View diagnostic MUST suggest placing `flowframe.yaml` in the common ancestor of model and View and, if necessary, passing `--config`; sibling `model/` and `views/` directories are supported with that explicit common root.
 
 The resolver MUST canonicalize paths, reject traversal outside the project root for project-owned assets and retain both a logical relative path and a resolved filesystem path. Symlinks that escape the project root MUST be rejected for themes and assets.
 
@@ -207,13 +224,14 @@ The resolver MUST canonicalize paths, reject traversal outside the project root 
 
 For theme ID `X`:
 
-1. if X is a built-in ID, reject a conflicting project directory and resolve immutable `resources/themes/X/theme.yaml`,
+0. reject the project if any directory `<project-root>/themes/<built-in-id>/` exists, whichever theme is selected,
+1. if X is a built-in ID, resolve immutable `resources/themes/X/theme.yaml`,
 2. otherwise resolve `<project-root>/themes/X/theme.yaml`,
 3. require the declared theme ID to equal X and fail if no such theme exists.
 
 File-level overlay or merging between a project theme and a built-in theme is forbidden in v0.1. Missing element, boundary or relation mappings use `resources/mappings/v1.json`, containing the complete PRD §13.3 mapping table independently of any theme. The resulting token reference MUST exist in the selected theme. Missing files, malformed tokens or unknown token references never trigger a switch to another theme.
 
-The manifest MUST record theme ID, declared version, origin (`project` or `built-in`) and an aggregate hash. The aggregate is calculated from a domain tag followed by each normalized POSIX relative path, byte length and raw file bytes for `theme.yaml`, the required license inventory and all referenced assets, sorted by path. Built-in font-set references contribute package resource IDs and raw bytes. Length prefixes prevent ambiguous concatenation.
+The manifest MUST record theme ID, declared version, origin (`project` or `built-in`) and an aggregate hash. The aggregate covers `theme.yaml`, the license inventory, every declared asset and every custom font file; built-in font-set files contribute resource names and raw bytes. The exact encoding (domain tag `flowframe-theme-hash/v1\n`, 4-byte big-endian name length, name, 8-byte big-endian content length, content, entries sorted bytewise by name) and a committed test vector are defined in [ADR-0020](adrs/0020-theme-aggregate-hash.md).
 
 ---
 
@@ -223,11 +241,11 @@ The loader pipeline is:
 
 1. read bytes with an explicit UTF-8 policy,
 2. accept and remove one leading UTF-8 BOM for parsing; raw provenance hashes still include it,
-3. enforce input byte and YAML nesting limits,
-4. compose a YAML node graph without invoking custom constructors,
-5. allow only the documented core scalar, sequence and mapping tags,
-6. reject duplicate keys, aliases exceeding the configured expansion limit and non-string mapping keys where the schema expects objects,
-7. construct JSON-compatible primitive values in FlowFrame code; normalize schema-designated human-text values to NFC before length validation, but do not normalize IDs, paths, keys or raw source hashes,
+3. enforce the fixed input byte and YAML nesting limits (ADR-0009),
+4. compose a YAML 1.2 node graph without invoking custom constructors; reject a `%YAML 1.1` directive (ADR-0018),
+5. allow only the YAML 1.2 core-schema scalar, sequence and mapping tags; reject merge keys (`<<`) and custom tags,
+6. reject duplicate keys, aliases exceeding the fixed expansion limit and non-string mapping keys where the schema expects objects,
+7. construct JSON-compatible primitive values in FlowFrame code; normalize schema-designated human-text values to NFC before length validation (PRD §8.4 limits and control-character rule), but do not normalize IDs, paths, keys or raw source hashes,
 8. build a JSON Pointer to source-location map,
 9. validate against the selected schema,
 10. construct immutable domain objects.
@@ -240,7 +258,7 @@ Input order MAY be retained for author-friendly output, but semantic equality an
 
 ## 8. Validation model
 
-Validation runs in layers and stops only where continuing would create misleading diagnostics:
+Validation runs in layers and stops only where continuing would create misleading diagnostics. Which layers each command runs is defined by the command stage matrix in [ADR-0017](adrs/0017-command-stage-matrix.md); `validate`, `review` and `build` share one validation service and MUST report identical diagnostics up to and including layer 8.
 
 1. safe YAML loading and project/configuration schema,
 2. theme schema and theme asset inventory,
@@ -253,8 +271,9 @@ Validation runs in layers and stops only where continuing would create misleadin
 9. generated D2 lint,
 10. `d2 validate`,
 11. render process result,
-12. output SVG safety and integrity checks,
-13. manifest schema validation.
+12. decoration, legend and accessibility composition,
+13. output SVG canonicalization, safety and integrity checks,
+14. manifest schema validation.
 
 Structural errors in one document prevent construction of its domain model. Independent documents MAY still be checked so one invocation can report useful errors together.
 
@@ -274,23 +293,26 @@ IDs use the PRD §8.3 grammar and one namespace for the system, boundaries, elem
 
 For an undirected relation, `source` and `target` remain mandatory. Directionality affects arrowheads and eligible labels only; it does not change the storage model.
 
-Relation endpoints and all scenario participants reference elements, never boundaries. Scenario `relationId`, protocol inheritance and participant permutations follow PRD §§9.4 and 10.5. Parents reference only boundaries/system; omitted parent means outside the system, without kind-based inference. Validate actor/external-system ancestry. When systemBoundary is enabled but no selected element reaches the system through its parents, emit the PRD FFV warning and omit that empty boundary.
+Relation endpoints and all scenario participants reference elements, never boundaries. Scenario `relationId`, protocol inheritance and participant permutations follow PRD §§9.4 and 10.5. Parents reference only boundaries/system; omitted parent means outside the system, without kind-based inference. Validate actor/external-system ancestry and require `system.id` in the ancestor chain of every `subsystem` boundary. When systemBoundary is enabled but no selected element reaches the system through its parents, emit the PRD FFV warning and omit that empty boundary.
 
-View validation covers family/subtype, scenario existence, selection element/relation IDs, forbidden family fields, traversal bounds, empty results and layout compatibility. Relation combinations and display defaults are exactly PRD §§9.3.1 and 10.8, not inferred independently by projectors.
+View validation covers family/subtype, scenario existence, selection element/relation IDs, forbidden family fields, traversal bounds, empty results (by running the selector of §9.1), `subtitle` without `title` and layout compatibility. Relation combinations and display defaults are exactly PRD §§9.3.1 and 10.8, not inferred independently by projectors.
 
 ### 8.2. Diagnostics
 
-A diagnostic contains:
+A diagnostic contains (JSON form: `flowframe-diagnostics/v1`, [ADR-0016](adrs/0016-diagnostics-contract.md)):
 
 ```text
 severity: error | warning | info
 code: stable FlowFrame code
 message: concise human explanation
 category: validation | usage | dependency | execution | policy | internal
-location: optional file + one-based line + column + JSON Pointer
+location: optional file (project-root-relative) + one-based line + column + JSON Pointer
 related: zero or more related locations
 hint: optional corrective action
+debug: optional object, only with --debug
 ```
+
+Diagnostics are sorted by file, line, column, code and message; diagnostics without a location follow, sorted by code and message.
 
 Code families:
 
@@ -303,10 +325,11 @@ Code families:
 | `FFT` | Theme, presentation and assets |
 | `FFI` | Family IR invariants |
 | `FFD` | D2 generation and validation |
-| `FFR` | Renderer and SVG output |
+| `FFR` | Renderer, SVG output and publication |
+| `FFA` | AI adapter and source-conformance findings |
 | `FFX` | Internal/unexpected failures |
 
-Source-related diagnostics MUST include their closest valid location; renderer/output/internal failures may omit it. CLI text uses `system-model.yaml:42:9 /relations/2/target`. `docs/diagnostics.md` is the implementation-time code registry and records each code's severity/category and example.
+Source-related diagnostics MUST include their closest valid location; renderer/output/internal failures may omit it. CLI text uses `system-model.yaml:42:9 /relations/2/target`. `docs/diagnostics.md` is the implementation-time code registry and records each code's severity/category and example; codes used only in prereleases are marked `prerelease-only` and removed before v0.1.
 
 Codes and exit statuses are public CLI behavior. Message wording MAY improve without a major schema change.
 
@@ -322,17 +345,19 @@ The selector returns selected elements, ancestors, candidate relations, inclusio
 
 Sequence uses only its scenario and an optional exact participant permutation (PRD §10.5); selection/exclusion and boundaries are forbidden. Resolve first-occurrence ordering, including note-only participants and from-before-to order, before building Sequence IR.
 
-Configuration defaults, family display fields and integration-flow defaults come from PRD §§10.8 and 13.2; implementations MUST share one resolver rather than repeat defaults in CLI/projectors.
+Configuration defaults, family display fields and integration-flow defaults come from PRD §§10.8 and 13.2 and are stored once in `resources/defaults/v1.json`; `domain/defaults.py` is the only resolver (ADR-0019). CLI, projectors and generators never repeat defaults.
+
+The selector is implemented before `validate` (plan P2.7) because `validate --view` reports empty selections and selection warnings (ADR-0017).
 
 ### 9.2. Family projectors
 
 Each projector maps the selection to one of three disjoint IRs:
 
 - Architecture IR: nodes, nested boundary groups, typed edges and portable layout hints.
-- Flow IR: selected nodes, directed/bidirectional semantic flows, labels, explicit payload and protocol metadata. A selected undirected dependency is an FFV error, not a warning or omitted edge. Store annotations derive from kind; source/sink annotations derive only from selected degree, never from guessed business roles.
+- Flow IR: selected nodes, directed/bidirectional semantic flows, labels, explicit payload and protocol metadata. A selected undirected dependency is an FFV error, not a warning or omitted edge. Stores and processing/messaging nodes are distinguished by semantic shape and icon; source/sink annotations are post-MVP.
 - Sequence IR: ordered participants, messages (including self-messages) and notes; groups and activation spans are post-MVP. Messages use a solid line and one from-to arrowhead without timing semantics; responses are separate reverse messages and relationId does not import relation appearance. Optional legends explain only message/note/numbering constructs.
 
-Deprecated elements retain their `[deprecated]` text marker in labels and accessible descriptions in every family. Architecture/flow `display.relationLabels` hides only user labels; mandatory semantic labels remain visible.
+Deprecated elements retain their `[deprecated]` text marker in labels and accessible descriptions in every family. Architecture/flow `display.relationLabels` hides only user labels; mandatory semantic labels remain visible. All label text is composed by `generation/labels.py` according to PRD §13.10 and ADR-0011; projectors carry the parts, not composed strings.
 
 A projector MUST NOT emit D2 text or inspect theme colors. It MAY assign semantic roles such as `external`, `database` or `async` that the generator resolves through the global theme.
 
@@ -352,13 +377,22 @@ Every IR constructor enforces:
 
 The D2 generator is a programmatic typed writer, not an unrestricted text-template engine. It MUST:
 
-- write a generated-file header with FlowFrame version and resolved theme fingerprint equal to the manifest's `theme.sha256`, computed by the same aggregate algorithm (not a D2 content hash or authenticity token),
+- write a generated-file header with FlowFrame version and resolved theme fingerprint equal to the manifest's `theme.sha256`, computed by the same aggregate algorithm (not a D2 content hash or authenticity token). The header is exactly these three comment lines at the start of the file:
+
+  ```text
+  # Generated by FlowFrame <version>. Do not edit.
+  # flowframe-header: v1
+  # flowframe-theme-sha256: <64 lowercase hex digits>
+  ```
+
+  A missing or malformed header and a fingerprint mismatch in `render` are validation errors (1),
 - emit only constructs owned by the relevant family generator,
 - escape IDs, labels and string values in one audited module,
 - serialize properties in a fixed order,
 - serialize nodes before edges,
 - preserve IR order and use stable ID tie-breakers,
-- resolve all visual values through theme tokens and framework mappings,
+- resolve all visual values through theme tokens and framework mappings, applying the shape and token application tables of PRD §13.9 (ADR-0012) and line styles from `generation/line_styles.py` (ADR-0015),
+- compose labels with `generation/labels.py`, wrapping to the framework `label-max-width` with the shared metrics module (ADR-0007, ADR-0011),
 - avoid timestamps, absolute paths and process-specific values,
 - finish files with exactly one newline.
 
@@ -366,9 +400,9 @@ Raw D2 snippets from YAML are forbidden. Unknown tokens, kinds or semantics are 
 
 Generated identifiers MUST prefix source IDs in a reserved internal namespace and escape all D2 syntax. D2 keywords remain valid source IDs; source-to-generated mapping is injective. Derived IDs use separate namespaces and stable semantic identity, never random UUIDs or Python hashes.
 
-Generated D2 is self-contained: classes are materialized from resolved theme tokens/mappings and internal templates, with approved generic icons embedded as sanitized bounded SVG data URIs. There are no output imports, remote URLs or filesystem asset paths. The v0.1 generic index maps kinds, not free-text technologies, to assets with hashes/licenses. Deduplicate embedded URI declarations by sanitized asset SHA-256, using reusable classes/declarations so each unique asset appears once in D2 regardless of node count. An explicit null entry is a silent semantic-shape fallback; missing entries or missing declared files are invalid-pack errors. P0 verifies reuse with the pinned D2, including interactions with per-kind styling.
+Generated D2 is self-contained: classes are materialized from resolved theme tokens/mappings and internal templates, with approved generic icons embedded as bounded SVG data URIs. Icons are sanitized with the logo profile at package build; at runtime their SHA-256 is verified against `index.json` (ADR-0013). There are no output imports, remote URLs or filesystem asset paths. The v0.1 generic index maps kinds, not free-text technologies, to assets with hashes/licenses. Deduplicate embedded URI declarations by sanitized asset SHA-256, using reusable classes/declarations so each unique asset appears once in D2 regardless of node count. An explicit null entry is a silent semantic-shape fallback; missing entries, missing declared files or hash mismatches are invalid-pack errors. P0 verifies reuse with the pinned D2, including interactions with per-kind styling.
 
-Required D2 lint rules reject missing/invalid generated headers, imports, absolute or relative filesystem references, remote URLs, raw source-injected constructs, markdown/HTML labels, and unapproved data URIs. Only compiler-produced bounded SVG icon URIs with validated vector content are allowed. The lint validates content, not just a trusted-looking header.
+Required D2 lint rules reject missing/invalid generated headers, imports, absolute or relative filesystem references, remote URLs, raw source-injected constructs, markdown/HTML labels, and unapproved data URIs. Only bounded SVG icon data URIs whose decoded bytes match an icon-pack index hash are allowed. The lint validates content, not just a trusted-looking header.
 
 The generated D2 is an auditable intermediate artifact. Byte-for-byte golden tests are the main regression boundary between projection and external rendering.
 
@@ -381,13 +415,16 @@ The renderer wrapper invokes D2 without a shell and with:
 - an explicit executable path,
 - an explicit layout engine,
 - pinned or recorded flags,
-- a sanitized environment,
+- an allowlisted environment,
 - a bounded working directory inside the build workspace,
-- a configurable timeout subject to a global maximum,
+- the fixed timeout from `resources/limits/v1.json` (ADR-0009; not user-configurable in v0.1),
 - bounded captured stdout and stderr,
-- separate validation and render steps where supported.
+- separate validation and render steps where supported,
+- a new process group.
 
-Potentially influential `D2_*` environment variables MUST be cleared unless explicitly set by FlowFrame. Network access is not required and remote asset references are already rejected before this stage.
+The child environment is built from an allowlist, not inherited: a minimal `PATH`, `HOME` and `TMPDIR` pointing into the build workspace, `LC_ALL=C.UTF-8`, `TZ=UTC`, and only the `D2_*` variables FlowFrame sets itself. Network access is not required and remote asset references are already rejected before this stage.
+
+On SIGINT or timeout the wrapper sends SIGTERM to the process group, waits a fixed grace period, then sends SIGKILL, removes staging owned by the run and returns 130 (SIGINT) or 4 (timeout). No child process may outlive the command.
 
 The wrapper MUST record the verified executable SHA-256, reported D2 version, layout engine and version if exposed, arguments and normalized failure details. A timeout or non-zero exit is an error even if a partial SVG exists. Partial outputs MUST be removed or left only in a diagnostic temporary directory, never published as successful artifacts.
 
@@ -395,13 +432,15 @@ The wrapper MUST record the verified executable SHA-256, reported D2 version, la
 
 ### 11.1. Artifact publication
 
-Individual compile/render outputs use a sibling temporary file and `os.replace` after successful verification. Complete builds publish to an ordinary dedicated output directory, without symlinks or generation history.
+Individual compile/render outputs use a sibling temporary file and `os.replace` after successful verification. Before writing, the output path is compared with every input path of the invocation, and an existing file is replaced only if it is a FlowFrame artifact of the same type (valid D2 header, or the SVG marker comment of ADR-0008); otherwise the command fails with policy error 5 and leaves the file unchanged. Complete builds publish to an ordinary dedicated output directory, without symlinks or generation history. All decisions in this section are recorded in [ADR-0010](adrs/0010-output-publication.md).
 
-For target `<parent>/<name>`, private control state lives in `<parent>/.<name>.flowframe/`: one stable advisory-lock file, one staging directory, at most one previous-output directory and a small recovery journal. The installer/docs mark this control directory as untracked build state; it is not part of the three public artifacts. Staging and target MUST be on the same filesystem. Existing control state must have valid ownership records for this exact target; a name alone never authorizes recursive cleanup.
+For target `<parent>/<name>`, private control state lives in `<parent>/.<name>.flowframe/`: one stable advisory-lock file, one staging directory, at most one previous-output directory and a small recovery journal. It is the only path outside the target a build writes, as permitted by PRD §16.4. Documentation marks this control directory as untracked build state; it is not part of the three public artifacts.
+
+Before step 1, reject (policy, 5) an output directory that is a filesystem root, the process working directory, the resolved project root, an ancestor of any resolved source, configuration, theme or asset file, inside a theme directory, or a symlink. Supported filesystems are local POSIX filesystems; network filesystems are unsupported and not detected in v0.1. Staging and target MUST be on the same filesystem. Existing control state must have valid ownership records for this exact target; a name alone never authorizes recursive cleanup.
 
 1. Canonicalize the parent and target identity, reject an output symlink and acquire the per-target OS advisory lock. A competing writer fails immediately with a stable FFR execution diagnostic (4). Do not delete the lock file to break a held lock.
 2. Recover an interrupted prior publication before starting work. If the target is missing and the recorded intact backup exists, restore it. If the target contains the verified newly published set, recognize completion. Do not replace unrelated content encountered at the target or control paths; report the conflict and preserve the backup.
-3. Accept an absent target, an empty ordinary directory or a previous FlowFrame output whose manifest/schema, exact file inventory and output hashes validate. Reject unrelated files or modified artifacts with guidance to choose a dedicated directory. Never claim ownership from filenames alone.
+3. Accept an absent target, an empty ordinary directory or a previous FlowFrame output whose manifest (any manifest version this release can read, ADR-0004), exact file inventory and output hashes validate. Reject unrelated files or modified artifacts with guidance to choose a dedicated directory. Never claim ownership from filenames alone.
 4. Prepare D2/SVG in the single staging directory, write the manifest last, verify the complete artifact set and flush it before publication. Failure here leaves the old target unchanged. Remove only staging state owned by this run.
 5. Before replacement, clean the older retained backup if it is verified as FlowFrame-owned; on cleanup failure stop before touching the current target. Persist recovery intent, rename the old target to the backup slot (if one exists), then rename staging to the target. Record completion. First publication needs only the second rename; an accepted empty target can occupy the temporary backup slot.
 6. On failure/SIGINT during replacement, attempt to restore the recorded backup when no new target was published. Report an unsuccessful rollback and the backup/recovery location explicitly. A crash is resolved by the same journal-aware recovery on the next invocation.
@@ -409,7 +448,7 @@ For target `<parent>/<name>`, private control state lives in `<parent>/.<name>.f
 
 Two renames are not an atomic directory swap: readers may briefly see no target, and separate concurrent file opens have no snapshot guarantee. Consumers should read/copy/commit ordinary output files after a successful build, rather than reading through a publication in progress. Validation/render failure before publication preserves the old output; rollback after a publication failure is best effort, with explicit recovery status, not an unconditional durability promise. Output I/O, lock conflicts and failed recovery use execution category/code 4; unsafe path redirection remains policy/code 5.
 
-P0 tests rename failure, crash windows and ownership checks on supported filesystems. P3 implements this bounded state machine; no optional symlink mode, content-addressed generations, exported copies or whole-project transaction is in scope.
+P0.7 tests rename failure, crash windows and ownership checks on APFS and ext4. P3.8 implements this bounded state machine; no optional symlink mode, content-addressed generations, exported copies or whole-project transaction is in scope.
 
 ---
 
@@ -432,19 +471,7 @@ Project configuration decides whether and where those values are rendered. Per-v
 
 ### 12.2. Footer template grammar
 
-The footer template supports literal text plus zero or one `{source}` placeholder.
-
-- `{source}` inserts the View source as escaped plain text.
-- `{{` produces a literal `{`.
-- `}}` produces a literal `}`.
-- unmatched braces are errors.
-- unknown placeholders are errors.
-- a second `{source}` is an error.
-- braces in source data are not parsed again.
-- a static template is rendered whenever the footer is enabled.
-- a template containing `{source}` is omitted when the View has no source.
-
-Parsing produces a small token list (`Literal` and `Source`) during configuration validation. Rendering never performs ad hoc string replacement.
+The grammar is normative in PRD §13.2 and is not repeated here. Parsing produces a small token list (`Literal` and `Source`) during configuration validation. Rendering never performs ad hoc string replacement.
 
 ### 12.3. Decoration layout
 
@@ -454,26 +481,21 @@ Decorations are composed after D2 renders the semantic body:
 2. derive its view box and measurable body bounds,
 3. wrap all decoration text according to the PRD, then render title and subtitle as one title block using pinned theme fonts,
 4. sanitize, canonicalize and measure the selected logo; require a finite intrinsic view box,
-5. expand the logo proportionally into its per-asset `maxWidth` × `maxHeight` display box,
-6. render the footer fragment,
+5. scale the logo proportionally, up or down, to the largest size fitting its per-asset `maxWidth` × `maxHeight` display box ("contain"),
+6. render the footer fragment and the legend (ADR-0015),
 7. compute the top band as the maximum occupied top-slot height plus `decoration-gap` above and below,
 8. compute separate stacked legend/footer bands, each with `decoration-gap` above and below,
 9. calculate slot-aware canvas width using the exact PRD §13.6 formula (including symmetric clearance for a centered title),
 10. translate the semantic body without changing its internal geometry,
 11. place decorations into their configured slots and embed the sanitized logo nodes,
-12. normalize and verify the complete SVG.
+12. inject accessibility metadata (ADR-0014),
+13. canonicalize and verify the complete SVG (ADR-0008).
 
-The title and subtitle share one primary top slot. A logo and title configured for the same top slot are invalid. The initial allowed slots are:
+Slots and slot conflicts are normative in PRD §13.2 and §13.6; conflicts are evaluated after built-in defaults are applied. An absent optional decoration occupies no band. Decoration spacing is deterministic and comes from the theme, not from View metadata.
 
-- logo: `top-left` or `top-right`,
-- title block: `top-left` or `top-center`,
-- footer: `bottom-left`, `bottom-center` or `bottom-right`.
+Text measurement MUST use shipped or project-approved pinned fonts through `presentation/text_metrics.py`, shared by the compositor and label wrapping. Host-dependent browser measurement is not acceptable. Glyph coverage is not validated in v0.1; the covered scripts are documented.
 
-An absent optional decoration occupies no band. Decoration spacing is deterministic and comes from the theme, not from View metadata.
-
-Text measurement MUST use shipped or project-approved pinned fonts. If exact headless measurement cannot be made reproducible during Stage 0, the implementation MUST choose and document a deterministic metric strategy before Stage 1; host-dependent browser measurement is not acceptable for the release path.
-
-Deterministic measurement does not by itself guarantee identical consumer rendering. The Stage 0 ADR MUST select one output-wide text policy:
+Deterministic measurement does not by itself guarantee identical consumer rendering. [ADR-0007](adrs/0007-svg-text-and-fonts.md) MUST select one output-wide text policy in P0.4:
 
 - preserve accessible/searchable SVG `<text>` and pin or embed fonts, accepting documented rasterization differences between consumers, or
 - convert visible text to deterministic paths, accepting larger output and loss of native selection/search while providing per-object accessible names/descriptions plus a generated textual summary.
@@ -482,9 +504,9 @@ The policy applies to D2 body text and FlowFrame decorations. Path conversion ca
 
 Sanitized-logo hashes cover the canonical standalone asset. During embedding, the compositor MUST deterministically rename any asset IDs that collide with body or decoration IDs and update all fragment references. Collision handling MUST NOT mutate the stored standalone sanitized bytes or their manifest hash. Generated title and logo accessibility nodes use the same collision-safe ID allocator.
 
-When title or logo metadata is present, the final SVG MUST expose deterministic `title`/`desc` and ARIA references supported by the selected consumer baseline. Visible title text and the theme asset `alt` value remain escaped plain text. Always emit a top-level `<desc>` with deterministic selected-element/relation or ordered-scenario summary and per-object accessible descriptions. A missing visible title uses the View ID as its accessible name. Legends describe used non-color relation appearances, use pinned theme text, and occupy a measured bottom band above the footer. Their space is included before final sizing.
+The final `build` SVG MUST expose deterministic `title`/`desc` and ARIA references (`role="img"`, `aria-labelledby`, `aria-describedby`) as defined in [ADR-0014](adrs/0014-svg-accessibility-metadata.md). Visible title text and the theme asset `alt` value remain escaped plain text. Always emit a top-level `<desc>` using the ADR-0014 template and per-object `<title>`/`<desc>` located through the hook mechanism proven in P0.3. A missing visible title uses the View ID as its accessible name. Legends describe used non-color relation appearances (ADR-0015), use pinned theme text, and occupy a measured bottom band above the footer. Their space is included before final sizing. `render` body SVG carries none of this metadata.
 
-PRD §13.3 defines numeric token units, required colors, default mappings and typography. P0 verifies the required custom TTF faces with D2; fonts used by body and compositor are pinned consistently. Title/subtitle/footer text is NFC-normalized, measured and greedily wrapped at whitespace, with grapheme-boundary fallback, under `decoration-text-max-width`. Body bounds include the pinned D2 `--pad`; do not crop that padding again. Blocks in a top band are vertically centered, and horizontal edges respect `decoration-padding-x`.
+PRD §13.3 defines numeric token units, required colors, default mappings and typography; PRD §13.9 defines token application and the contrast pairs checked by `presentation/contrast.py`. P0.4 verifies the required custom TTF faces with D2; fonts used by body and compositor are pinned consistently. Title/subtitle/footer text is NFC-normalized, measured and greedily wrapped at whitespace, with grapheme-boundary fallback, under `decoration-text-max-width`. Body bounds include the pinned D2 `--pad`; do not crop that padding again. Blocks in a top band are vertically centered, and horizontal edges respect `decoration-padding-x`.
 
 ---
 
@@ -530,24 +552,29 @@ Processing order:
 
 Allowed and rejected constructs are defined normatively in the profile document, not duplicated in code comments. Unknown rendering elements, attributes, CSS properties and filter primitives fail closed; only the explicit inert-metadata exception in PRD §16.5 permits removal.
 
-The manifest records profile ID, sanitizer implementation/version, original SHA-256 and sanitized SHA-256 for each used asset. Identical bytes, profile and implementation version MUST produce byte-identical sanitized output.
+The manifest records profile ID, sanitizer implementation/version, original SHA-256 and sanitized SHA-256 for each used Theme/Brand Pack asset (`kind: logo`). Identical bytes, profile and implementation version MUST produce byte-identical sanitized output.
+
+The same sanitizer and profile process the generic icon pack when the FlowFrame package is built; the committed icon files are canonical sanitized bytes and are only hash-verified at runtime (ADR-0013).
 
 ---
 
 ## 14. SVG normalization and verification
 
+The published SVG is canonical: normalized, verified and then hashed; snapshot tests compare published bytes ([ADR-0008](adrs/0008-canonical-svg-output.md)). Raw renderer SVG is kept only in a diagnostic temporary directory with `--debug`. The first child node of the root is the marker comment `<!-- Generated by FlowFrame. Do not edit. -->`.
+
 The final SVG verifier MUST ensure:
 
 - one root `svg` element with a valid finite view box,
 - no scripts, events, `foreignObject`, external URLs or undeclared namespaces,
-- no remote font or image references; permit only validated bounded embedded icon SVGs and renderer-emitted font data with expected MIME types and a documented source-font-to-output transformation,
+- no remote font or image references; permit only hash-verified bounded embedded icon SVGs and renderer-emitted font data with expected MIME types and a documented source-font-to-output transformation,
+- renderer `<style>` content restricted to the ADR-0008 CSS allowlist, parsed with `tinycss2`,
 - all fragment references resolve,
 - title/logo/footer bounds remain inside the final canvas,
 - the semantic body is not clipped by decoration bands,
 - accessibility references resolve and visible metadata remains plain text,
 - numeric values are finite and within configured canvas limits.
 
-Normalization SHOULD make snapshots stable by fixing namespace prefixes, lossless numeric serialization, attribute order and explicitly ignorable metadata. It MUST NOT reorder visible child elements when painter order affects appearance. D2 may subset or re-encode fonts: source TTF hashes and embedded-font hashes need not be equal. P0 MUST characterize that pinned transformation; verification checks allowed MIME/content, bounds and provenance, and records both source and embedded hashes rather than demanding byte identity with the source TTF.
+Normalization MUST make output stable by fixing namespace prefixes, lossless numeric serialization, attribute order and explicitly ignorable metadata, and MUST be idempotent. It MUST NOT reorder visible child elements when painter order affects appearance. D2 may subset or re-encode fonts: source TTF hashes and embedded-font hashes need not be equal. P0 MUST characterize that pinned transformation; verification checks allowed MIME/content, bounds and provenance, and records both source and embedded hashes rather than demanding byte identity with the source TTF.
 
 Byte-identical final SVG is guaranteed only for the same FlowFrame version, sanitizer version, theme/assets, pinned fonts, D2 version, layout engine/version and renderer flags. The manifest makes that equivalence class explicit.
 
@@ -563,11 +590,10 @@ Manifest data is accumulated during the build and written last. The collector MU
 - resolved theme identity, origin and aggregate hash,
 - used asset processing records,
 - renderer and layout versions/options,
-- generated D2 and SVG hashes,
-- requested output identity,
+- generated D2 and canonical SVG hashes and their manifest-relative paths,
 - optional `generatedAt` only when `SOURCE_DATE_EPOCH` supplies a valid nonnegative epoch, serialized as UTC RFC 3339 with `Z`.
 
-Source paths are relative to the project root; output paths are relative to the manifest directory. Built-in resources use package resource IDs; absolute host paths are forbidden. Renderer flags record logical options/resource IDs instead of resolved absolute font paths. Every used icon/font records kind, ID, project path or package ID/version, license reference and SHA-256 in a `resources` array. `assetProcessing` is present exactly when vector logos/icons are sanitized by FlowFrame; font transformations are recorded with source/embedded hashes in `resources`, not as logo-sanitizer runs. Map keys and arrays with set semantics are serialized in stable order. JSON uses UTF-8, fixed indentation and one trailing newline.
+Source paths are relative to the project root; output paths are relative to the manifest directory. Built-in resources use package resource IDs; absolute host paths are forbidden. Renderer flags record logical options/resource IDs instead of resolved absolute font paths. Every used icon/font records kind, ID, project path or package ID/version, license reference and SHA-256 in a `resources` array. `assetProcessing` is present exactly when Theme/Brand Pack logos are sanitized during the build, each entry with `kind: logo`; pre-sanitized generic icons appear only in `resources` (`kind: icon`); font transformations are recorded with source/embedded hashes in `resources`, not as logo-sanitizer runs. Map keys and arrays with set semantics are serialized in stable order. JSON uses UTF-8, fixed indentation and one trailing newline.
 
 No wall-clock timestamp is generated by default. With identical `SOURCE_DATE_EPOCH` and inputs the entire manifest is stable; no invented JSON Schema `volatile` keyword is needed. Reproducibility tests compare all fields under the same environment. Input hashes cover raw bytes even when parsing normalizes BOM/NFC.
 
@@ -575,17 +601,17 @@ No wall-clock timestamp is generated by default. With identical `SOURCE_DATE_EPO
 
 ## 16. CLI behavior
 
-The exact signatures, defaults, category-to-exit mapping and precedence are defined once in [PRD §17](prd.md#17-cli-contract); CLI help and contract tests MUST follow that contract.
+The exact signatures, defaults, category-to-exit mapping and precedence are defined once in [PRD §17](prd.md#17-cli-contract); stage coverage per command is defined in [ADR-0017](adrs/0017-command-stage-matrix.md). CLI help and contract tests MUST follow them.
 
-- `validate` supports model-only, model+view and exclusive theme-only forms; it never invokes D2.
-- `compile` validates and emits self-contained D2 only. It requires no D2 executable.
-- `render` verifies the generated header, theme fingerprint and full D2 lint, then runs D2 validation/rendering. It emits body SVG only. An explicit config is used for custom fonts/theme; without it only built-in configuration is used.
-- `build` composes the complete branded diagram, adds accessible summary/legend and publishes one complete artifact set using recoverable ordinary-directory replacement. `--layout` overrides `render.layoutEngine`; only ELK is accepted in v0.1 and no fallback exists.
-- `build --all` uses the explicit project `views` registry and a single supplied model, validates IDs/paths before rendering, sorts by View ID and publishes independently to `DIR/<view-id>/` using section 11.1 (no concurrent-reader atomicity). It stops on failure and reports already published views.
-- `review` selects stages of the same validation service as `validate`, without duplicate rules or D2/AI. Default modes produce the same findings/status as model+view validate. P7 source-conformance uses explicitly supplied sources and an optional adapter; visual review is post-MVP.
+- `validate` supports model-only, model+view and exclusive theme-only forms; with a View it runs selection and IR invariants; it never invokes D2. `validate --all` is post-MVP.
+- `compile` validates and emits self-contained D2 only. It requires no D2 executable and applies single-file overwrite protection (§11.1).
+- `render` verifies the generated header, theme fingerprint and full D2 lint, then runs D2 validation/rendering. It emits canonical body SVG only. An explicit config is used for custom fonts/theme and `render.layoutEngine`; without it only built-in configuration is used.
+- `build` composes the complete branded diagram, adds accessible summary/legend and publishes one complete artifact set using recoverable ordinary-directory replacement. Layout precedence is `--layout` > `render.layoutEngine` > `elk` (ADR-0003); only ELK is accepted in v0.1 and no fallback exists.
+- `build --all` uses the explicit project `views` registry and a single supplied model. It runs every validation stage up to the family IR for all views before rendering the first one, then renders in View-ID order and publishes independently to `DIR/<view-id>/` using section 11.1 (no concurrent-reader atomicity). A render or publication failure stops processing and reports already published views.
+- `review` selects stages of the same validation service as `validate`, without duplicate rules or D2/AI. Default modes produce the same findings/status as model+view validate. P7 source-conformance uses explicitly supplied sources and an optional adapter and reports `FFA` warnings (ADR-0025); visual review is post-MVP.
 - `compare-layouts` remains post-MVP, compiling once and rendering with at least two explicitly selected engines without fallback.
 
-All processing commands support `--format text|json` and `--debug`. JSON diagnostics are one array on stderr; optional redacted debug objects are contained within diagnostic entries, never emitted as extra text. No implicit warning promotion is implemented.
+All processing commands support `--format text|json` and `--debug`. JSON diagnostics are one `flowframe-diagnostics/v1` array on stderr and stdout stays empty; optional redacted debug objects are contained within diagnostic entries, never emitted as extra text. Rich/Typer styling and Python warnings MUST NOT reach either stream in JSON mode. No implicit warning promotion is implemented.
 
 Exit codes are 0 success, 1 validation, 2 usage, 3 dependency, 4 execution (renderer/timeout/output I/O/lock/publication), 5 policy, 6 internal and 130 SIGINT. Each diagnostic has a category independent of its prefix; observed-error precedence is 6 > 5 > 4 > 3 > 2 > 1. Cancellation returns 130 after cleanup. Unknown source properties are ordinarily validation errors, but known forbidden styling fields and unsafe resources are policy errors. Unexpected exceptions use FFX and never masquerade as invalid user input.
 
@@ -603,7 +629,7 @@ build(request: BuildRequest) -> BuildResult
 
 Request and result types are immutable. Expected user errors are returned as diagnostics, not raised across the facade. Exceptions are reserved for programming faults and converted by the CLI into `FFX` diagnostics with sensitive paths removed unless debug mode is explicitly enabled.
 
-No stability guarantee is made for lower-level Python modules in v0.1.
+No stability guarantee is made for lower-level Python modules in v0.1. The CLI `render` and `review` commands use internal services; facade entry points for them are post-MVP.
 
 ---
 
@@ -631,8 +657,13 @@ CI SHOULD run the renderer with a read-only source tree, a writable isolated bui
 
 ### 19.1. Fast tests
 
-- schema positive/negative fixtures,
-- loader resource-limit and source-location tests,
+- schema positive/negative fixtures, including agreement of schema `default` annotations with `defaults/v1.json`,
+- loader resource-limit and source-location tests, YAML 1.2 scalars (`yes/no/on/off`), merge keys, custom tags, BOM and NFD input,
+- label composition per family and display-flag combination,
+- property tests: detail and audience never change selection; warnings never change generated D2; D2 ID mapping is injective and D2 keywords remain valid IDs,
+- contrast validator pairs for built-in and custom themes,
+- theme hash test vector (ADR-0020),
+- diagnostics JSON schema validation and registry completeness,
 - semantic validation and deterministic diagnostic ordering,
 - selector and projector unit tests,
 - footer grammar tests,
@@ -648,9 +679,14 @@ CI SHOULD run the renderer with a read-only source tree, a writable isolated bui
 - timeout and renderer-error behavior,
 - project versus built-in theme resolution,
 - recoverable output replacement, bounded retention and crash/lock/cleanup behavior,
-- deterministic repeated builds,
+- deterministic repeated builds in different absolute paths (D2 and canonical SVG),
 - global branding consistency across every family,
-- decoration sizing and slot-conflict cases.
+- decoration sizing and slot-conflict cases, including conflicts introduced by defaults,
+- differential test: `validate`, `review` and `build` report identical diagnostics up to the IR stage,
+- `compile` without D2 on PATH; `FLOWFRAME_D2` relative, non-executable or directory,
+- forbidden output directories and single-file overwrite refusal,
+- no orphan D2 process after SIGINT or timeout,
+- JSON-mode stream purity with `--debug` and `PYTHONWARNINGS=always`.
 
 ### 19.3. Snapshot and security tests
 
@@ -662,13 +698,13 @@ CI SHOULD run the renderer with a read-only source tree, a writable isolated bui
 - path traversal and symlink escape attempts,
 - fuzz/property tests for footer parsing, D2 escaping and SVG references.
 
-Visual snapshots require intentional approval when the pinned renderer changes. A snapshot update alone is not evidence that a visual regression is acceptable.
+Visual snapshots require intentional approval by the Accessibility and design reviewer (ADR-0021). A snapshot update alone is not evidence that a visual regression is acceptable.
 
 ---
 
 ## 20. Performance and observability
 
-Stage 0 MUST record baseline timings and memory for small and medium golden diagrams. v0.1 performance budgets are then added to CI as generous regression limits, not hard real-time guarantees.
+Stage 0 MUST record baseline timings and memory for small and medium golden diagrams. v0.1 performance budgets ([ADR-0023](adrs/0023-performance-budgets.md)) are then added to CI as generous regression limits, not hard real-time guarantees.
 
 Debug logs MAY include stage timings, selected counts, renderer command metadata and cache decisions. Normal mode remains concise. Logs MUST never include unredacted environment variables or source contents by default.
 
@@ -678,10 +714,11 @@ Caching is optional for v0.1. If introduced, its key MUST include all source has
 
 ## 21. Compatibility and versioning
 
-Schema version changes follow these rules:
+Schema version changes follow [ADR-0004](adrs/0004-schema-authority-and-contract-versioning.md):
 
 - closed contracts require a new `schemaVersion` for any newly accepted field or enum value, including optional additions; a version covers the accepted language, not merely required fields,
 - changed meaning, removed fields or newly required fields require a new contract version,
+- a release reads the current and the immediately previous version of each source contract; v0.1 reads only v1,
 - FlowFrame MUST reject unsupported contract versions with a migration-oriented diagnostic,
 - generated artifacts record both contract and tool versions,
 - automatic migration is post-MVP; v0.1 may provide only guidance.
@@ -690,23 +727,21 @@ Theme packs declare their own version independently of FlowFrame. The sanitizer 
 
 ---
 
-## 22. Stage 0 decisions still required
+## 22. Architecture decisions
 
-Implementation MUST not guess these values:
+All decisions, including those still open, are tracked in the ADR register [`docs/adrs/README.md`](adrs/README.md). Implementation MUST NOT guess a value that an ADR lists as Proposed or as an open parameter; the dependent work waits for the owning phase. Each ADR records context, tested alternatives, decision and consequences. The actionable order and acceptance gates are defined in [`implementation-plan.md`](implementation-plan.md).
 
-1. exact pinned D2 version and installation/checksum strategy,
-2. output-wide SVG text policy: deterministic measurement, `<text>` versus paths, font embedding/formats and accessibility consequences,
-3. SVG normalization library/algorithm after real D2 output is sampled,
-4. numeric global limits for inputs, logos, XML complexity, canvas size, subprocess output and timeout,
-5. initial generic icon set and license,
-6. supported documentation renderers/browsers,
-7. committed-versus-CI-generated SVG policy,
-8. release performance budgets,
-9. offline icon embedding and D2 output font verification,
-10. verification of PRD display defaults and portable profile mappings on representative output.
+Decisions still open at the time of writing:
 
-Each decision is captured as an ADR with context, tested alternatives, decision and consequences. The actionable order and acceptance gates are defined in [`implementation-plan.md`](implementation-plan.md).
+| ADR | Open item | Phase |
+|---|---|---|
+| 0006 | D2 version, per-platform hashes, `d2 validate` behavior | P0.2 |
+| 0003, 0011, 0012, 0013, 0014 | profile mapping, `label-max-width`, shape rendering, icon reuse, accessibility hooks | P0.3 |
+| 0007 | text policy, default font family, measurement library | P0.4 |
+| 0008 | ignorable renderer fields, serializer, CSS allowlist | P0.3 |
+| 0010 | journal format and fsync points | P0.7 |
+| 0009, 0013, 0019, 0021, 0023 | numeric limits, icon set, display-default verification, snapshot sets and consumer SVG policy, performance budgets | P0.6 |
+| 0022 | supported consumers | P0.1 |
+| 0025 | AI platform (P7.1), thresholds and corpus (P7.4) | P7 |
 
-The first AI adapter platform is chosen at P7.1; its representative corpus and threshold are frozen at P7.4 before release evaluation. `uv`/Hatchling, BOM acceptance and the PRD display defaults are already decided, not Stage 0 open choices.
-
-Dark theme is deliberately absent from this list because it is post-MVP, consistent with the PRD and P9.
+Dark theme is deliberately absent because it is post-MVP, consistent with the PRD and P9.
