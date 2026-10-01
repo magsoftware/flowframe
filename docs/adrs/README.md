@@ -92,6 +92,12 @@ Tests, fixtures or experiments that prove the decision holds.
 | [0023](0023-performance-budgets.md) | Performance budgets | Proposed | P0.6 |
 | [0024](0024-license-and-provenance-inventory.md) | License and provenance inventory | Accepted | P0.6 / P8 |
 | [0025](0025-ai-adapter-boundary.md) | AI adapter boundary and evaluation | Accepted | P7.1 / P7.4 |
+| [0026](0026-native-d2-decorations.md) | Decorations and legend placed by D2 | Proposed | P0.1 / P0.3 / P0.4 |
+| [0027](0027-logo-image-embedding-and-minimal-profile.md) | Logo embedded as an image with a minimal v1 sanitizer profile | Proposed | P0.1 / P0.5 |
+| [0028](0028-disposable-publication-state.md) | Output publication with disposable control state | Proposed | P0.1 / P0.7 |
+| [0029](0029-v0-1-command-set.md) | Reduced v0.1 command set | Proposed | P0.1 |
+| [0030](0030-single-owner-per-normative-rule.md) | One owning document per normative rule | Proposed | P0.1 |
+| [0031](0031-flowframe-svg-writer-and-geometry-providers.md) | FlowFrame SVG writer with pluggable geometry providers | Proposed | P0.1 / P0.2–P0.4 |
 
 ## Mapping from former open-decision lists
 
