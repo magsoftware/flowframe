@@ -97,6 +97,7 @@ Tests, fixtures or experiments that prove the decision holds.
 | [0028](0028-disposable-publication-state.md) | Output publication with disposable control state | Proposed | P0.1 / P0.7 |
 | [0029](0029-v0-1-command-set.md) | Reduced v0.1 command set | Proposed | P0.1 |
 | [0030](0030-single-owner-per-normative-rule.md) | One owning document per normative rule | Proposed | P0.1 |
+| [0031](0031-flowframe-svg-writer-and-geometry-providers.md) | FlowFrame SVG writer with pluggable geometry providers | Proposed | P0.1 / P0.2–P0.4 |
 
 ## Mapping from former open-decision lists
 
